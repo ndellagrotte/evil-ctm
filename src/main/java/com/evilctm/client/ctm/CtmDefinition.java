@@ -79,6 +79,10 @@ public class CtmDefinition implements CtmProperties {
 		return resourceId;
 	}
 
+	public int getPackPriority() {
+		return packPriority;
+	}
+
 	public String getPackId() {
 		return packId;
 	}

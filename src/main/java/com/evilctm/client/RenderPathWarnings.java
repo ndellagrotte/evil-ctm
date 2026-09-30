@@ -41,12 +41,12 @@ public class RenderPathWarnings {
 				problem = RenderPathStatus.Problem.NOT_INVOKED;
 			}
 			warnedThisWorld = true;
-			EvilCtmClient.LOGGER.warn("Evil CTM render path problem: {}", problem);
+			EvilCtmClient.LOGGER.warn("Evil CTM render path problem: {}. {}", problem, problem.remedy());
 			if (EvilCtmConfig.INSTANCE.renderPathWarnings.get()) {
 				TextComponentTranslation message = new TextComponentTranslation(problem.translationKey());
 				message.getStyle().setColor(TextFormatting.RED);
 				mc.ingameGUI.getChatGUI().printChatMessage(message);
-				TextComponentTranslation hint = new TextComponentTranslation("evilctm.warning.hint");
+				TextComponentTranslation hint = new TextComponentTranslation(problem.hintKey());
 				hint.getStyle().setColor(TextFormatting.RED);
 				mc.ingameGUI.getChatGUI().printChatMessage(hint);
 			}

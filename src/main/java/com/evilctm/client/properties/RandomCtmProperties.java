@@ -52,7 +52,8 @@ public class RandomCtmProperties extends BaseCtmProperties {
 					if (parts.length == 2) {
 						int min = Integer.parseInt(parts[0]);
 						int max = Integer.parseInt(parts[1]);
-						if (min > 0 && max > 0 && max >= min) {
+						// 0 is a valid weight (never picked, as in OptiFine); it keeps its tile position
+						if (min >= 0 && max >= min) {
 							for (int weight = min; weight <= max; weight++) {
 								weights.add(weight);
 							}
@@ -60,7 +61,7 @@ public class RandomCtmProperties extends BaseCtmProperties {
 						}
 					} else if (parts.length == 1) {
 						int weight = Integer.parseInt(parts[0]);
-						if (weight > 0) {
+						if (weight >= 0) {
 							weights.add(weight);
 							continue;
 						}
@@ -71,7 +72,13 @@ public class RandomCtmProperties extends BaseCtmProperties {
 				EvilCtmClient.LOGGER.warn("Invalid 'weights' element '" + weightStr + "' at index '" + i + "' in file '" + resourceId + "' in pack '" + packId + "'");
 			}
 
-			if (!weights.isEmpty()) {
+			long sum = 0;
+			for (int i = 0; i < weights.size(); i++) {
+				sum += weights.getInt(i);
+			}
+			if (!weights.isEmpty() && sum <= 0) {
+				EvilCtmClient.LOGGER.warn("'weights' sum to zero in file '" + resourceId + "' in pack '" + packId + "'; ignoring them");
+			} else if (!weights.isEmpty()) {
 				indexProviderFactory = new RandomIndexProvider.WeightedFactory(weights.toIntArray());
 			}
 		}

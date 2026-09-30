@@ -16,7 +16,7 @@ import net.minecraft.util.ResourceLocation;
 public final class EmissiveSuffixLoader {
 	public static final ResourceLocation LOCATION = new ResourceLocation("minecraft", "optifine/emissive.properties");
 
-	private static String emissiveSuffix;
+	private static volatile String emissiveSuffix;
 
 	private EmissiveSuffixLoader() {
 	}
@@ -26,11 +26,14 @@ public final class EmissiveSuffixLoader {
 		return emissiveSuffix;
 	}
 
+	/**
+	 * Reads the pack's emissive suffix. Called at the head of the block atlas's {@code loadSprites}, before any
+	 * {@code TextureStitchEvent.Pre} listener registers sprites (their {@code _e} companions depend on it).
+	 */
 	public static void load(IResourceManager manager) {
 		emissiveSuffix = null;
 		try {
-			IResource resource = manager.getResource(LOCATION);
-			try (InputStream inputStream = resource.getInputStream()) {
+			try (IResource resource = manager.getResource(LOCATION); InputStream inputStream = resource.getInputStream()) {
 				Properties properties = new Properties();
 				properties.load(inputStream);
 				emissiveSuffix = properties.getProperty("suffix.emissive");
@@ -44,7 +47,8 @@ public final class EmissiveSuffixLoader {
 
 	public static boolean hasTexture(IResourceManager manager, ResourceLocation spriteId) {
 		ResourceLocation imageId = new ResourceLocation(spriteId.getNamespace(), "textures/" + spriteId.getPath() + ".png");
-		try (InputStream ignored = manager.getResource(imageId).getInputStream()) {
+		// closing the IResource closes its eagerly opened .mcmeta stream too
+		try (IResource ignored = manager.getResource(imageId)) {
 			return true;
 		} catch (FileNotFoundException ignored) {
 			return false;
@@ -62,7 +66,7 @@ public final class EmissiveSuffixLoader {
 	/** Whether the pack file behind the redirected sprite {@code spriteId} exists. */
 	public static boolean hasRedirectedTexture(IResourceManager manager, ResourceLocation spriteId) {
 		ResourceLocation imageId = ResourceRedirectHandler.redirect(new ResourceLocation(spriteId.getNamespace(), "textures/" + spriteId.getPath() + ".png"));
-		try (InputStream ignored = manager.getResource(imageId).getInputStream()) {
+		try (IResource ignored = manager.getResource(imageId)) {
 			return true;
 		} catch (IOException e) {
 			return false;

@@ -183,8 +183,9 @@ if (!enable_shadow.toBoolean()) {
     shadowJar.enabled = false
 }
 
+// Built with the Java 25 toolchain, targeting Java 21 like Demonica: players on Java 21-24 must be able to load it.
 compileJava {
-    sourceCompatibility = targetCompatibility = JavaVersion.VERSION_25
+    options.release.set(21)
 }
 
 jar {
@@ -230,7 +231,7 @@ shadowJar {
 }
 
 compileTestJava {
-    sourceCompatibility = targetCompatibility = JavaVersion.VERSION_25
+    options.release.set(21)
 }
 
 test {

@@ -10,7 +10,10 @@ import net.minecraft.util.BlockRenderLayer;
 
 /**
  * Per-quad layer decisions for CTM-mod {@code layer} metadata (CleanContinuity semantics, with "routed layer" meaning
- * "not a native layer"). When CTM-mod routing is off, a quad renders exactly in native layers.
+ * "not a native layer"). When CTM-mod routing is off, a quad renders exactly in native layers. A rule whose layer is not
+ * in {@code builtMask} (the layers the block is really meshed in, see {@code LayerRouter.builtMask}) is ignored, so a
+ * quad is never moved to a layer that will not be built (extra layers off, fast path off, shader layer override,
+ * a sprite the layer probe did not see).
  */
 public final class CtmModLayerFilter {
 	private CtmModLayerFilter() {
@@ -22,14 +25,17 @@ public final class CtmModLayerFilter {
 	}
 
 	/** Whether a base quad with {@code sprite} is kept in {@code layer}. */
-	public static boolean shouldRender(@Nullable TextureAtlasSprite sprite, BlockRenderLayer layer, boolean nativeLayer) {
+	public static boolean shouldRender(@Nullable TextureAtlasSprite sprite, BlockRenderLayer layer, boolean nativeLayer, int builtMask) {
 		if (!routingActive()) {
 			return nativeLayer;
 		}
-		return CtmRenderLayerRouter.shouldRender(sprite, layer, !nativeLayer);
+		return CtmRenderLayerRouter.shouldRender(sprite, layer, !nativeLayer, builtMask);
 	}
 
-	/** Whether the outputs of a quad with {@code sprite} are forced full bright (CTM-mod emissive fallback). */
+	/**
+	 * Whether the outputs of a quad with {@code sprite} are forced full bright (CTM-mod emissive fallback). This follows
+	 * the rule whether or not its layer is built: the native copy is the fallback either way.
+	 */
 	public static boolean fullbrightFallback(@Nullable TextureAtlasSprite sprite, boolean nativeLayer) {
 		return routingActive() && CtmRenderLayerRouter.shouldFullbrightEmissiveFallback(sprite, !nativeLayer);
 	}

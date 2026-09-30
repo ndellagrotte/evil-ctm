@@ -21,7 +21,7 @@ public final class CtmModLayerSource implements ExtraLayerSource {
 	public int extraLayerMask(IBlockState rawState, int nativeMask) {
 		try {
 			return CtmRenderLayerRouter.extraLayerMask(rawState, nativeMask);
-		} catch (RuntimeException e) {
+		} catch (RuntimeException | LinkageError | StackOverflowError e) {
 			return 0;
 		}
 	}

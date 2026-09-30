@@ -11,14 +11,13 @@ import javax.annotation.Nullable;
 import com.evilctm.api.client.ProcessingDataProvider;
 import com.evilctm.client.properties.BaseCtmProperties;
 import com.evilctm.client.util.AxisUtil;
+import com.evilctm.client.util.TileEntityNameResolver;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
-import net.minecraft.world.IWorldNameable;
 import net.minecraft.world.biome.Biome;
 
 public class BaseProcessingPredicate implements ProcessingPredicate {
@@ -73,13 +72,8 @@ public class BaseProcessingPredicate implements ProcessingPredicate {
 		}
 
 		if (blockEntityNamePredicate != null) {
-			TileEntity blockEntity = level.getTileEntity(pos);
-			if (blockEntity instanceof IWorldNameable nameable && nameable.hasCustomName()) {
-				String blockEntityName = nameable.getDisplayName().getUnformattedText();
-				if (blockEntityName == null || !blockEntityNamePredicate.test(blockEntityName)) {
-					return false;
-				}
-			} else {
+			String blockEntityName = TileEntityNameResolver.customName(level.getTileEntity(pos));
+			if (blockEntityName == null || !blockEntityNamePredicate.test(blockEntityName)) {
 				return false;
 			}
 		}

@@ -26,12 +26,15 @@ import net.minecraft.world.IBlockAccess;
 /**
  * Loads OptiFine rules from strings through the real loader dispatch, sort and holder building, and runs the pipeline.
  * Sprites are {@link TestSprites} created on demand by id; each {@link #addRule} call is its own pack, in increasing
- * pack priority.
+ * pack priority. As in production, the atlas's missing sprite ({@code minecraft:missingno}, which {@code <skip>},
+ * padded and unstitched tiles resolve to) is named {@code missingno}, so {@code RenderUtil.isMissingSprite} sees it.
  */
 public class PipelineHarness {
 	private final List<CtmPropertiesLoader.LoadedRule<?>> rules = new ArrayList<>();
 	private final Map<String, TextureAtlasSprite> sprites = new ConcurrentHashMap<>();
 	private int packPriority;
+
+	private static final String MISSING_ID = new ResourceLocation("missingno").toString();
 
 	public PipelineHarness() {
 		McBootstrap.ensure();
@@ -76,7 +79,18 @@ public class PipelineHarness {
 	/** The test sprite with this id (e.g. {@code minecraft:blocks/glass}), created on first use. */
 	public TextureAtlasSprite sprite(String id) {
 		String key = new ResourceLocation(id).toString();
-		return sprites.computeIfAbsent(key, TestSprites::create);
+		return sprites.computeIfAbsent(key, k -> k.equals(MISSING_ID) ? TestSprites.create("missingno") : TestSprites.create(k));
+	}
+
+	/** The atlas's missing sprite. */
+	public TextureAtlasSprite missingSprite() {
+		return sprite(MISSING_ID);
+	}
+
+	/** Makes {@code id} resolve to the missing sprite, as a tile that failed to stitch does. Call before {@link #publish}. */
+	public PipelineHarness markMissing(String id) {
+		sprites.put(new ResourceLocation(id).toString(), missingSprite());
+		return this;
 	}
 
 	public PipelineHarness gate(FakeGate gate) {

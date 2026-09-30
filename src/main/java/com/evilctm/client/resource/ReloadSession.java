@@ -9,6 +9,7 @@ import java.util.function.Supplier;
 import com.evilctm.client.EvilCtmClient;
 import com.evilctm.client.ctm.CtmDefinition;
 import net.minecraft.client.resources.IResourcePack;
+import net.minecraft.client.resources.LegacyV2Adapter;
 
 /**
  * The resource scans of one reload: the OptiFine rule result and the CTM-mod definitions. It is created in the
@@ -32,12 +33,46 @@ public final class ReloadSession {
 		return new ReloadSession(rules, definitions);
 	}
 
+	/**
+	 * The session between the Pre and Post stitch of one reload. Pre {@link #begin begins} it; Post
+	 * {@link #consume consumes} it (so it is never reused by a later reload) or, when Pre did not run, scans once.
+	 * Only touched on the client thread.
+	 */
+	public static final class Pending {
+		private ReloadSession session;
+
+		/** Scans and holds the result for {@link #consume}; replaces an unconsumed earlier session. */
+		public ReloadSession begin(Supplier<ReloadSession> scanner) {
+			session = scanner.get();
+			return session;
+		}
+
+		/** The session {@link #begin} left, dropped from this holder; otherwise a fresh scan. */
+		public ReloadSession consume(Supplier<ReloadSession> scanner) {
+			ReloadSession s = session;
+			session = null;
+			return s != null ? s : scanner.get();
+		}
+	}
+
 	public CtmPropertiesLoader.LoadingResult rules() {
 		return rules;
 	}
 
 	public List<CtmDefinition> definitions() {
 		return definitions;
+	}
+
+	/**
+	 * The pack whose files to enumerate: packs with {@code pack_format} 2 (and such mod packs) are wrapped in a
+	 * {@link LegacyV2Adapter}, which is not file-backed itself. Only for listing files; reads and names still go
+	 * through the pack as given.
+	 */
+	public static IResourcePack unwrapForScan(IResourcePack pack) {
+		while (pack instanceof LegacyV2Adapter adapter) {
+			pack = adapter.getUnadaptedPack();
+		}
+		return pack;
 	}
 
 	/** Logs once per pack name that the pack cannot be scanned for CTM files (it is not file-backed). */

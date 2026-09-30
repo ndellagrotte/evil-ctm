@@ -12,6 +12,7 @@ import com.evilctm.client.compat.demonica.RenderGate;
 import com.evilctm.client.compat.demonica.RenderPathStatus;
 import net.minecraft.block.Block;
 import net.minecraft.util.BlockRenderLayer;
+import net.minecraft.util.math.BlockPos;
 
 /** A settable {@link RenderGate}. */
 public class FakeGate implements RenderGate {
@@ -19,6 +20,8 @@ public class FakeGate implements RenderGate {
 	public final Set<Block> forced = new HashSet<>();
 	public final Map<Block, BlockRenderLayer> overrides = new HashMap<>();
 	public volatile RenderPathStatus.Problem problem = RenderPathStatus.Problem.OK;
+	public volatile boolean overrideReliable = true;
+	public final Set<BlockPos> forcedPositions = new HashSet<>();
 
 	public FakeGate fastPath(boolean on) {
 		fastPath = on;
@@ -33,6 +36,27 @@ public class FakeGate implements RenderGate {
 	public FakeGate forceVanilla(Block block) {
 		forced.add(block);
 		return this;
+	}
+
+	/** Sends only the block at {@code pos} to vanilla (as Demonica does next to a Component Model Hider hidden block). */
+	public FakeGate forceVanillaAt(BlockPos pos) {
+		forcedPositions.add(pos.toImmutable());
+		return this;
+	}
+
+	public FakeGate overrideReliable(boolean reliable) {
+		overrideReliable = reliable;
+		return this;
+	}
+
+	@Override
+	public boolean forcedVanillaAt(Block block, BlockPos pos) {
+		return blockForcedVanilla(block) || forcedPositions.contains(pos.toImmutable());
+	}
+
+	@Override
+	public boolean layerOverrideReliable() {
+		return overrideReliable;
 	}
 
 	@Override

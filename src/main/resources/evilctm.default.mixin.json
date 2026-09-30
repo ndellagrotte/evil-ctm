@@ -5,7 +5,7 @@
   "compatibilityLevel": "JAVA_8",
   "target": "@env(DEFAULT)",
   "client": [
-    "BlockRenderLayerMixin",
+    "ChunkBuilderMeshingTaskMixin",
     "TextureMapMixin"
   ],
   "server": [],

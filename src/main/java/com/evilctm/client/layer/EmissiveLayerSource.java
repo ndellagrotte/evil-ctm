@@ -5,11 +5,8 @@ import com.evilctm.client.config.EvilCtmConfig;
 import com.evilctm.client.model.QuadProcessors;
 import com.evilctm.impl.client.EmissiveSpriteApiImpl;
 import net.minecraft.block.state.IBlockState;
-import net.minecraft.client.renderer.block.model.BakedQuad;
-import net.minecraft.client.renderer.block.model.IBakedModel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.util.BlockRenderLayer;
-import net.minecraft.util.EnumFacing;
 
 /**
  * Extra CUTOUT_MIPPED layer for emissive companions of blocks that are only SOLID: the companions are translucent-edged
@@ -17,8 +14,6 @@ import net.minecraft.util.EnumFacing;
  */
 public final class EmissiveLayerSource implements ExtraLayerSource {
 	public static final EmissiveLayerSource INSTANCE = new EmissiveLayerSource();
-
-	private static final EnumFacing[] FACES_AND_NULL = {EnumFacing.DOWN, EnumFacing.UP, EnumFacing.NORTH, EnumFacing.SOUTH, EnumFacing.WEST, EnumFacing.EAST, null};
 
 	private EmissiveLayerSource() {
 	}
@@ -38,29 +33,24 @@ public final class EmissiveLayerSource implements ExtraLayerSource {
 			return 0;
 		}
 		try {
-			IBakedModel model = ModelProbe.model(rawState);
-			if (model == null) {
-				return 0;
-			}
+			int cutoutMipped = LayerRouter.bit(BlockRenderLayer.CUTOUT_MIPPED);
 			EmissiveSpriteApiImpl api = EmissiveSpriteApiImpl.INSTANCE;
 			boolean ctmPairs = EmissiveSpriteApiImpl.hasCtmTilePairs();
 			QuadProcessors.Tables tables = ctmPairs ? QuadProcessors.current() : null;
-			for (EnumFacing face : FACES_AND_NULL) {
-				for (BakedQuad quad : ModelProbe.quads(model, rawState, face)) {
-					TextureAtlasSprite sprite = quad.getSprite();
-					if (sprite == null) {
-						continue;
-					}
-					if (api.getEmissiveSprite(sprite) != null) {
-						return LayerRouter.bit(BlockRenderLayer.CUTOUT_MIPPED);
-					}
-					if (tables != null && tables.slice(rawState, sprite).processors().length > 0) {
-						return LayerRouter.bit(BlockRenderLayer.CUTOUT_MIPPED);
-					}
+			for (ModelProbe.ProbedSprite probed : ModelProbe.blockSprites(rawState)) {
+				if ((probed.layers() & cutoutMipped) == 0) {
+					continue;
+				}
+				TextureAtlasSprite sprite = probed.sprite();
+				if (api.getEmissiveSprite(sprite) != null) {
+					return cutoutMipped;
+				}
+				if (tables != null && tables.slice(probed.state(), sprite).processors().length > 0) {
+					return cutoutMipped;
 				}
 			}
 			return 0;
-		} catch (RuntimeException e) {
+		} catch (RuntimeException | LinkageError | StackOverflowError e) {
 			return 0;
 		}
 	}

@@ -12,21 +12,17 @@ import com.evilctm.client.config.EvilCtmConfig;
 import com.evilctm.client.layer.ModelProbe;
 import com.evilctm.client.model.ReloadEpoch;
 import net.minecraft.block.state.IBlockState;
-import net.minecraft.client.renderer.block.model.BakedQuad;
-import net.minecraft.client.renderer.block.model.IBakedModel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.util.BlockRenderLayer;
-import net.minecraft.util.EnumFacing;
 
 /**
  * Per-texture layer rules from CTM-mod metadata. Whether a layer is native to a block comes from
  * {@code LayerRouter.isNativeLayer}; this class only knows which sprites want which layer and which models use them.
  */
 public final class CtmRenderLayerRouter {
-	private static final EnumFacing[] FACES_AND_NULL = {EnumFacing.DOWN, EnumFacing.UP, EnumFacing.NORTH,
-			EnumFacing.SOUTH, EnumFacing.WEST, EnumFacing.EAST, null};
-
-	private static volatile Snapshot snapshot = new Snapshot(Long.MIN_VALUE, Map.of(), 0);
+	/** The published rules; written only by {@link #reload}, so a stale cache refresh can never bring old rules back. */
+	private static volatile Rules rules = new Rules(Map.of(), 0);
+	private static volatile Snapshot snapshot = new Snapshot(Long.MIN_VALUE, rules);
 
 	private CtmRenderLayerRouter() {
 	}
@@ -42,15 +38,22 @@ public final class CtmRenderLayerRouter {
 				}
 			}
 		}
-		snapshot = new Snapshot(ReloadEpoch.current(), Map.copyOf(next), targets);
+		Rules r = new Rules(Map.copyOf(next), targets);
+		rules = r;
+		snapshot = new Snapshot(ReloadEpoch.current(), r);
 	}
 
-	/** The current snapshot; rules carry over an epoch change but the per-state model cache starts empty. */
+	/**
+	 * The per-epoch model cache for the current rules. The rules always come from {@link #rules}, never from the cache
+	 * that was read, so a racing refresh can at worst install an extra empty cache; one built for other rules or an
+	 * older epoch is replaced on the next call.
+	 */
 	private static Snapshot snapshot() {
 		Snapshot s = snapshot;
+		Rules r = rules;
 		long epoch = ReloadEpoch.current();
-		if (s.epoch != epoch) {
-			s = new Snapshot(epoch, s.spriteLayers, s.targetMask);
+		if (s.epoch != epoch || s.rules != r) {
+			s = new Snapshot(epoch, r);
 			snapshot = s;
 		}
 		return s;
@@ -58,7 +61,7 @@ public final class CtmRenderLayerRouter {
 
 	/** True when any loaded CTM-mod definition carries a {@code layer}. */
 	public static boolean active() {
-		return !snapshot.spriteLayers.isEmpty();
+		return !rules.spriteLayers().isEmpty();
 	}
 
 	/**
@@ -67,10 +70,10 @@ public final class CtmRenderLayerRouter {
 	 */
 	public static int extraLayerMask(IBlockState state, int nativeMask) {
 		Snapshot s = snapshot();
-		if (s.targetMask == 0) {
+		if (s.rules.targetMask() == 0) {
 			return 0;
 		}
-		return modelLayerMask(s, state) & s.targetMask & ~nativeMask;
+		return modelLayerMask(s, state) & s.rules.targetMask() & ~nativeMask;
 	}
 
 	public static boolean allowAdditionalLayer(IBlockState state, BlockRenderLayer layer) {
@@ -80,12 +83,27 @@ public final class CtmRenderLayerRouter {
 		}
 		Snapshot s = snapshot();
 		int bit = 1 << layer.ordinal();
-		return (s.targetMask & bit) != 0 && (modelLayerMask(s, state) & bit) != 0;
+		return (s.rules.targetMask() & bit) != 0 && (modelLayerMask(s, state) & bit) != 0;
 	}
 
 	public static boolean shouldRender(@Nullable TextureAtlasSprite sprite, BlockRenderLayer layer, boolean routedLayer) {
 		LayerRule rule = ruleFor(sprite);
 		return rule == null ? !routedLayer : rule.layer() == layer || (rule.emissiveFallback() && !routedLayer);
+	}
+
+	/**
+	 * {@link #shouldRender}, where a rule whose layer is not in {@code builtMask} (the layers the block is really meshed
+	 * in) counts as no rule: the quad stays in its native layers instead of vanishing.
+	 */
+	public static boolean shouldRender(@Nullable TextureAtlasSprite sprite, BlockRenderLayer layer, boolean routedLayer, int builtMask) {
+		LayerRule rule = effectiveRule(sprite, builtMask);
+		return rule == null ? !routedLayer : rule.layer() == layer || (rule.emissiveFallback() && !routedLayer);
+	}
+
+	@Nullable
+	private static LayerRule effectiveRule(@Nullable TextureAtlasSprite sprite, int builtMask) {
+		LayerRule rule = ruleFor(sprite);
+		return rule != null && (builtMask & 1 << rule.layer().ordinal()) != 0 ? rule : null;
 	}
 
 	public static boolean shouldProcessWrappedOverlay(@Nullable TextureAtlasSprite sprite, BlockRenderLayer layer,
@@ -104,7 +122,7 @@ public final class CtmRenderLayerRouter {
 
 	@Nullable
 	private static LayerRule ruleFor(@Nullable TextureAtlasSprite sprite) {
-		return sprite == null ? null : snapshot.spriteLayers.get(sprite.getIconName());
+		return sprite == null ? null : rules.spriteLayers().get(sprite.getIconName());
 	}
 
 	private static int modelLayerMask(Snapshot s, IBlockState state) {
@@ -117,39 +135,36 @@ public final class CtmRenderLayerRouter {
 		return mask;
 	}
 
+	/** Rule layers used by any model of the block, counted only where the model returns the sprite in that layer. */
 	private static int findModelLayers(Snapshot s, IBlockState state) {
-		IBakedModel model = ModelProbe.model(state);
-		if (model == null) {
-			return 0;
-		}
-		int found = 0;
-		for (EnumFacing face : FACES_AND_NULL) {
-			for (BakedQuad quad : ModelProbe.quads(model, state, face)) {
-				TextureAtlasSprite sprite = quad.getSprite();
-				if (sprite != null) {
-					LayerRule rule = s.spriteLayers.get(sprite.getIconName());
-					if (rule != null) {
-						found |= 1 << rule.layer().ordinal();
-					}
+		try {
+			int found = 0;
+			for (ModelProbe.ProbedSprite probed : ModelProbe.blockSprites(state)) {
+				LayerRule rule = s.rules.spriteLayers().get(probed.sprite().getIconName());
+				if (rule != null) {
+					found |= (1 << rule.layer().ordinal()) & probed.layers();
 				}
 			}
+			return found;
+		} catch (RuntimeException | LinkageError | StackOverflowError e) {
+			return 0;
 		}
-		return found;
 	}
 
 	private record LayerRule(BlockRenderLayer layer, boolean emissiveFallback) {
 	}
 
+	private record Rules(Map<String, LayerRule> spriteLayers, int targetMask) {
+	}
+
 	private static final class Snapshot {
 		final long epoch;
-		final Map<String, LayerRule> spriteLayers;
-		final int targetMask;
+		final Rules rules;
 		final ConcurrentHashMap<IBlockState, Integer> modelLayers = new ConcurrentHashMap<>();
 
-		Snapshot(long epoch, Map<String, LayerRule> spriteLayers, int targetMask) {
+		Snapshot(long epoch, Rules rules) {
 			this.epoch = epoch;
-			this.spriteLayers = spriteLayers;
-			this.targetMask = targetMask;
+			this.rules = rules;
 		}
 	}
 }

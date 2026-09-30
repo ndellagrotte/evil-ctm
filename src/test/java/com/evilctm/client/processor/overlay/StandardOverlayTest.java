@@ -299,7 +299,7 @@ class StandardOverlayTest {
 	}
 
 	@Test
-	void tintBlockWithoutTintIndexUsesIndexZero() {
+	void tintBlockWithoutTintIndexIsUntinted() {
 		BlockColors colors = new BlockColors();
 		AtomicInteger seenTintIndex = new AtomicInteger(-100);
 		colors.registerBlockColorHandler((state, world, pos, tintIndex) -> {
@@ -308,8 +308,14 @@ class StandardOverlayTest {
 		}, Blocks.GRASS);
 		OverlayQuads.setBlockColorsForTests(() -> colors);
 		load("tintBlock=minecraft:grass\n");
-		run(new FakeBlockAccess().set(side(0), DIRT), BlockRenderLayer.CUTOUT_MIPPED);
-		assertEquals(0, seenTintIndex.get());
+		BakedQuad quad = run(new FakeBlockAccess().set(side(0), DIRT), BlockRenderLayer.CUTOUT_MIPPED).get(0);
+		assertEquals(-100, seenTintIndex.get(), "the colour handler must not be called");
+		assertEquals(-1, quad.getTintIndex());
+		int stride = quad.getFormat().getIntegerSize();
+		int color = quad.getFormat().getColorOffset() / 4;
+		for (int v = 0; v < 4; v++) {
+			assertEquals(0xFFFFFFFF, quad.getVertexData()[v * stride + color]);
+		}
 	}
 
 	@Test

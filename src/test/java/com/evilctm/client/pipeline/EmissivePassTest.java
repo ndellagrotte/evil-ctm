@@ -137,27 +137,92 @@ class EmissivePassTest {
 	}
 
 	@Test
-	void sevenArgFormDefersSolidOnlyWhenConfigAllowsExtraLayers() {
+	void pipelineSolidPassHasNoCompanionWhenCutoutMippedIsGranted() {
+		assertTrue(LayerRouter.allowExtraLayer(stone, BlockRenderLayer.CUTOUT_MIPPED, POS));
+		List<BakedQuad> out = run(stone, BlockRenderLayer.SOLID);
+		assertEquals(List.of(baseQuad), out);
+	}
+
+	@Test
+	void pipelineCutoutMippedPassHasExactlyTheCompanion() {
+		List<BakedQuad> out = run(stone, BlockRenderLayer.CUTOUT_MIPPED);
+		assertEquals(1, out.size());
+		assertSame(glow, out.get(0).getSprite());
+	}
+
+	@Test
+	void pipelineCtmTileWithReservedPairGetsTheTileCompanionInCutoutMipped() {
+		assertTrue(harness.addRule("minecraft:optifine/ctm/stone/stone.properties", "method=fixed\nmatchBlocks=stone\ntiles=minecraft:evilctm_reserved/ctm/t0\n"));
+		harness.publish();
+		TextureAtlasSprite tile = harness.sprite("minecraft:evilctm_reserved/ctm/t0");
+		TextureAtlasSprite tileGlow = TestSprites.create("test:t0_e");
+		EmissiveSpriteApiImpl.INSTANCE.publish(Map.of(tile, tileGlow));
+		LayerRouter.refreshActive();
+
+		List<BakedQuad> solid = run(stone, BlockRenderLayer.SOLID);
+		assertEquals(1, solid.size());
+		assertSame(tile, solid.get(0).getSprite());
+		List<BakedQuad> cutoutMipped = run(stone, BlockRenderLayer.CUTOUT_MIPPED);
+		assertEquals(1, cutoutMipped.size());
+		assertSame(tileGlow, cutoutMipped.get(0).getSprite());
+	}
+
+	@Test
+	void pipelineCompanionStaysInSolidWhenFastPathIsOff() {
+		harness.gate(new FakeGate().fastPath(false));
+		assertSolidCarriesCompanion();
+	}
+
+	@Test
+	void pipelineCompanionStaysInSolidWhenExtraLayersAreOff() {
 		EvilCtmConfig cfg = EvilCtmConfig.INSTANCE;
 		boolean prev = cfg.extraLayers.get();
 		try {
-			ProcessingContextImpl ctx = new ProcessingContextImpl().begin(null, BlockRenderLayer.SOLID);
 			cfg.extraLayers.set(false);
-			List<BakedQuad> out = EmissivePass.apply(null, List.of(baseQuad), null, BlockRenderLayer.SOLID, true, SOLID_MASK, ctx);
-			assertEquals(2, out.size());
-			cfg.extraLayers.set(true);
-			assertEquals(null, EmissivePass.apply(null, List.of(baseQuad), null, BlockRenderLayer.SOLID, true, SOLID_MASK, ctx));
+			LayerRouter.refreshActive();
+			assertSolidCarriesCompanion();
 		} finally {
 			cfg.extraLayers.set(prev);
+			LayerRouter.refreshActive();
 		}
 	}
 
 	@Test
-	void pipelineEmitsSolidCompanionInSolidPass() {
+	void pipelineCompanionStaysInSolidAtAPositionSentToVanilla() {
+		harness.gate(new FakeGate().forceVanillaAt(POS));
+		assertSolidCarriesCompanion();
+	}
+
+	@Test
+	void pipelineCompanionStaysInSolidWithConnectedTexturesOff() {
+		EvilCtmConfig cfg = EvilCtmConfig.INSTANCE;
+		boolean prev = cfg.connectedTextures.get();
+		try {
+			cfg.connectedTextures.set(false);
+			LayerRouter.refreshActive();
+			assertSolidCarriesCompanion();
+		} finally {
+			cfg.connectedTextures.set(prev);
+			LayerRouter.refreshActive();
+		}
+	}
+
+	private void assertSolidCarriesCompanion() {
 		List<BakedQuad> out = run(stone, BlockRenderLayer.SOLID);
 		assertEquals(2, out.size());
 		assertSame(baseQuad, out.get(0));
 		assertSame(glow, out.get(1).getSprite());
+	}
+
+	@Test
+	void pipelineCutoutNativeBlockGetsNoDuplicateCompanionInAnOverlayPass() {
+		assertTrue(harness.addRule("minecraft:optifine/ctm/glass/overlay.properties",
+				"method=overlay_fixed\nmatchBlocks=glass\ntiles=test:overlay\nlayer=cutout_mipped\n"));
+		harness.publish();
+		assertEquals(2, run(glass, BlockRenderLayer.CUTOUT).size());
+		for (BakedQuad q : run(glass, BlockRenderLayer.CUTOUT_MIPPED)) {
+			assertFalse(q.getSprite() == glow, "base companion duplicated in the overlay pass");
+		}
 	}
 
 	@Test
@@ -188,9 +253,14 @@ class EmissivePassTest {
 		EmissiveSpriteApiImpl.INSTANCE.publish(Map.of(tile, tileGlow));
 		BakedQuad tileQuad = TestQuads.fullFace(EnumFacing.NORTH, tile, 3);
 		ProcessingContextImpl ctx = new ProcessingContextImpl().begin(null, BlockRenderLayer.CUTOUT_MIPPED);
-		List<BakedQuad> out = pass(null, List.of(baseQuad), List.of(tileQuad), BlockRenderLayer.CUTOUT_MIPPED, false, SOLID_MASK, true, ctx);
+		// in a real pass the filter has dropped baseQuad, so out is an empty non-null list
+		List<BakedQuad> out = pass(new java.util.ArrayList<>(), List.of(baseQuad), List.of(tileQuad), BlockRenderLayer.CUTOUT_MIPPED, false, SOLID_MASK, true, ctx);
 		assertEquals(1, out.size());
 		assertSame(tileGlow, out.get(0).getSprite());
+		// out == null keeps meaning "identical to original"
+		List<BakedQuad> seeded = pass(null, List.of(baseQuad), List.of(tileQuad), BlockRenderLayer.CUTOUT_MIPPED, false, SOLID_MASK, true, ctx);
+		assertEquals(2, seeded.size());
+		assertSame(baseQuad, seeded.get(0));
 	}
 
 	@Test
@@ -203,6 +273,15 @@ class EmissivePassTest {
 		List<BakedQuad> kept = new java.util.ArrayList<>(List.of(baseQuad));
 		assertSame(kept, pass(kept, List.of(baseQuad), null, BlockRenderLayer.CUTOUT_MIPPED, false, cutoutMask, true, ctx));
 		assertEquals(1, kept.size());
+	}
+
+	@Test
+	void multiLayerSolidBlockGetsNoBaseCompanionsInCutoutMipped() {
+		int solidCutout = SOLID_MASK | LayerRouter.bit(BlockRenderLayer.CUTOUT);
+		ProcessingContextImpl ctx = new ProcessingContextImpl().begin(null, BlockRenderLayer.CUTOUT_MIPPED);
+		assertEquals(null, pass(null, List.of(baseQuad), List.of(baseQuad), BlockRenderLayer.CUTOUT_MIPPED, false, solidCutout, true, ctx));
+		ProcessingContextImpl solidCtx = new ProcessingContextImpl().begin(null, BlockRenderLayer.SOLID);
+		assertEquals(2, pass(null, List.of(baseQuad), null, BlockRenderLayer.SOLID, true, solidCutout, true, solidCtx).size());
 	}
 
 	@Test

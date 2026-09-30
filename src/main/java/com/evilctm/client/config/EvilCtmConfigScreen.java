@@ -11,18 +11,30 @@ import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.resources.I18n;
 
-/** One toggle per boolean option (keys {@code options.evilctm.<key>}), then Done. */
+/**
+ * One toggle per boolean option (keys {@code options.evilctm.<key>}), then Done. Options read only while rules are
+ * loaded ({@code builtin_default_rules}, {@code ctm_mod_textures}) trigger one resource reload when the screen closes.
+ */
 public class EvilCtmConfigScreen extends GuiScreen {
 	private static final int DONE_ID = 1000;
+	private static final int STATUS_Y = 42;
+	private static final int LINE_HEIGHT = 10;
+	private static final int BUTTON_HEIGHT = 20;
+	private static final int MIN_PITCH = 21;
+	private static final int MAX_PITCH = 24;
 
 	private final GuiScreen parent;
 	private final EvilCtmConfig config;
 	private final List<Option.BooleanOption> toggles = new ObjectArrayList<>();
+	private final boolean initialBuiltinRules;
+	private final boolean initialCtmModTextures;
 	private RenderPathStatus.Problem status = RenderPathStatus.Problem.OK;
 
 	public EvilCtmConfigScreen(GuiScreen parent, EvilCtmConfig config) {
 		this.parent = parent;
 		this.config = config;
+		this.initialBuiltinRules = config.builtinDefaultRules.get();
+		this.initialCtmModTextures = config.ctmModTextures.get();
 	}
 
 	@Override
@@ -35,12 +47,51 @@ public class EvilCtmConfigScreen extends GuiScreen {
 				toggles.add(booleanOption);
 			}
 		}
-		int top = Math.max(80, height / 2 - (toggles.size() + 1) * 12 + 20);
+		Layout layout = layout(height, statusLines().size(), toggles.size());
 		for (int i = 0; i < toggles.size(); i++) {
 			Option.BooleanOption option = toggles.get(i);
-			buttonList.add(new GuiButton(i, width / 2 - 100, top + i * 24, 200, 20, optionText(option)));
+			int row = layout.twoColumns() ? i / 2 : i;
+			int x = layout.twoColumns() ? (i % 2 == 0 ? width / 2 - 155 : width / 2 + 5) : width / 2 - 100;
+			buttonList.add(new GuiButton(i, x, layout.top() + row * layout.pitch(), layout.twoColumns() ? 150 : 200, BUTTON_HEIGHT, optionText(option)));
 		}
-		buttonList.add(new GuiButton(DONE_ID, width / 2 - 100, top + toggles.size() * 24 + 8, 200, 20, I18n.format("gui.done")));
+		buttonList.add(new GuiButton(DONE_ID, width / 2 - 100, layout.doneY(), 200, BUTTON_HEIGHT, I18n.format("gui.done")));
+	}
+
+	/** Where the toggles and Done go below {@code statusLines} lines of status text; one column while it fits. */
+	record Layout(int top, int pitch, boolean twoColumns, int doneY) {
+	}
+
+	static Layout layout(int height, int statusLines, int count) {
+		int top = STATUS_Y + statusLines * LINE_HEIGHT + 6;
+		// room for the toggles above Done (its 8 px gap and height) and a 4 px margin
+		int available = height - 4 - (BUTTON_HEIGHT + 8) - top;
+		int pitch = Math.min(MAX_PITCH, available / Math.max(1, count));
+		boolean twoColumns = pitch < MIN_PITCH;
+		int rows = twoColumns ? (count + 1) / 2 : count;
+		if (twoColumns) {
+			pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, available / Math.max(1, rows)));
+		}
+		int doneY = top + Math.max(0, rows - 1) * pitch + BUTTON_HEIGHT + 8;
+		return new Layout(top, pitch, twoColumns, doneY);
+	}
+
+	private List<String> statusLines() {
+		List<String> lines = new ObjectArrayList<>();
+		if (status == RenderPathStatus.Problem.OK) {
+			lines.add(I18n.format("evilctm.status.ok"));
+		} else {
+			lines.addAll(fontRenderer.listFormattedStringToWidth(I18n.format(status.translationKey()), width - 40));
+			lines.addAll(fontRenderer.listFormattedStringToWidth(I18n.format(status.hintKey()), width - 40));
+		}
+		return lines;
+	}
+
+	@Override
+	public void onGuiClosed() {
+		// Done, Escape or any other way out: rules are only (re)loaded by a resource reload.
+		if (config.builtinDefaultRules.get() != initialBuiltinRules || config.ctmModTextures.get() != initialCtmModTextures) {
+			Minecraft.getMinecraft().scheduleResourcesRefresh();
+		}
 	}
 
 	@Override
@@ -63,16 +114,11 @@ public class EvilCtmConfigScreen extends GuiScreen {
 	public void drawScreen(int mouseX, int mouseY, float partialTicks) {
 		drawDefaultBackground();
 		drawCenteredString(fontRenderer, I18n.format("options.evilctm.title"), width / 2, 30, 0xFFFFFF);
-		int y = 42;
-		if (status == RenderPathStatus.Problem.OK) {
-			drawCenteredString(fontRenderer, I18n.format("evilctm.status.ok"), width / 2, y, 0x55FF55);
-		} else {
-			List<String> lines = new ObjectArrayList<>(fontRenderer.listFormattedStringToWidth(I18n.format(status.translationKey()), width - 40));
-			lines.addAll(fontRenderer.listFormattedStringToWidth(I18n.format("evilctm.warning.hint"), width - 40));
-			for (String line : lines) {
-				drawCenteredString(fontRenderer, line, width / 2, y, 0xFF5555);
-				y += 10;
-			}
+		int y = STATUS_Y;
+		int color = status == RenderPathStatus.Problem.OK ? 0x55FF55 : 0xFF5555;
+		for (String line : statusLines()) {
+			drawCenteredString(fontRenderer, line, width / 2, y, color);
+			y += LINE_HEIGHT;
 		}
 		super.drawScreen(mouseX, mouseY, partialTicks);
 		for (GuiButton button : buttonList) {

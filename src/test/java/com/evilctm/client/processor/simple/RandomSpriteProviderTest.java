@@ -56,6 +56,42 @@ class RandomSpriteProviderTest {
 		}
 	}
 
+	private static RandomIndexProvider.Factory parsedWeights(String weights) {
+		java.util.Properties properties = new java.util.Properties();
+		properties.setProperty("method", "random");
+		properties.setProperty("matchTiles", "stone");
+		properties.setProperty("tiles", "a b c");
+		properties.setProperty("weights", weights);
+		com.evilctm.testutil.McBootstrap.ensure();
+		com.evilctm.client.properties.RandomCtmProperties props = new com.evilctm.client.properties.RandomCtmProperties(properties,
+				new net.minecraft.util.ResourceLocation("minecraft:optifine/ctm/w/w.properties"), new com.evilctm.testutil.TestPack("p"), 0, null, "random");
+		props.init();
+		return props.getIndexProviderFactory();
+	}
+
+	@Test
+	void zeroWeightKeepsItsPositionAndIsNeverPicked() {
+		RandomIndexProvider index = parsedWeights("10 0 5").createIndexProvider(3);
+		int[] counts = new int[3];
+		java.util.Random random = new java.util.Random(7);
+		for (int i = 0; i < 30000; i++) {
+			counts[index.getRandomIndex(random.nextInt())]++;
+		}
+		assertEquals(0, counts[1]);
+		assertEquals(2.0 / 3, counts[0] / 30000.0, 0.02);
+		assertEquals(1.0 / 3, counts[2] / 30000.0, 0.02);
+	}
+
+	@Test
+	void allZeroWeightsDoNotThrow() {
+		assertTrue(parsedWeights("0 0") instanceof RandomIndexProvider.UnweightedFactory);
+		RandomIndexProvider truncated = new RandomIndexProvider.WeightedFactory(new int[] {0, 0, 5}).createIndexProvider(2);
+		for (int i = -5; i < 5; i++) {
+			int picked = truncated.getRandomIndex(i);
+			assertTrue(picked >= 0 && picked < 2);
+		}
+	}
+
 	@Test
 	void unweightedHistogramIsRoughlyUniform() {
 		RandomSpriteProvider provider = provider(new RandomIndexProvider.Unweighted(4), 0, Symmetry.NONE, false);

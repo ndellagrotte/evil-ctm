@@ -13,6 +13,7 @@ transformer**. A port of [CleanContinuity](https://github.com/Q-Engineering-Sour
   Evil CTM only renders on that path; when it is off (or Demonica rejects the Celeritas jar) Evil CTM logs a warning
   and prints one in chat.
 - Client only. Servers do not need it.
+- Java 21 or newer (the same as Demonica).
 
 Blocks Demonica sends to the vanilla renderer (non-`MODEL` render types, Snow Real Magic layers, ArchitectureCraft,
 blocks next to Component Model Hider hidden blocks), pistons, falling blocks, items and TESRs never get CTM.

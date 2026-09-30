@@ -15,6 +15,7 @@ import com.evilctm.client.util.QuadUtil;
 import com.evilctm.impl.client.ProcessingContextImpl;
 import com.evilctm.testutil.FakeBlockAccess;
 import com.evilctm.testutil.FakeGate;
+import com.evilctm.testutil.McBootstrap;
 import com.evilctm.testutil.PipelineHarness;
 import com.evilctm.testutil.TestProcessors;
 import com.evilctm.testutil.TestQuads;
@@ -27,10 +28,16 @@ import net.minecraft.util.BlockRenderLayer;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 class ProcessingChainTest {
 	private static final BlockPos POS = new BlockPos(3, 64, -7);
+
+	@BeforeAll
+	static void boot() {
+		McBootstrap.ensure();
+	}
 
 	@AfterEach
 	void reset() {

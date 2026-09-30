@@ -78,6 +78,10 @@ public interface RandomIndexProvider {
 				}
 			}
 
+			if (weightSum <= 0) {
+				// e.g. only the zero weights survived truncation: nothing to weigh, and % 0 would throw
+				return new Unweighted(size);
+			}
 			return new Weighted(newWeights, weightSum);
 		}
 	}

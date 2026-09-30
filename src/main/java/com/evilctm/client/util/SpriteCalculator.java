@@ -51,7 +51,7 @@ public final class SpriteCalculator {
 	public static TextureAtlasSprite[] getSprites(IBlockState state, @Nullable EnumFacing face) {
 		try {
 			return entry(state)[face == null ? 6 : face.getIndex()];
-		} catch (RuntimeException e) {
+		} catch (RuntimeException | LinkageError | StackOverflowError e) {
 			return NONE;
 		}
 	}
@@ -97,7 +97,7 @@ public final class SpriteCalculator {
 			for (EnumFacing face : EnumFacing.VALUES) {
 				result[face.getIndex()] = collect(model, state, face, faceless);
 			}
-		} catch (RuntimeException e) {
+		} catch (RuntimeException | LinkageError | StackOverflowError e) {
 			for (int i = 0; i < 7; i++) {
 				result[i] = NONE;
 			}

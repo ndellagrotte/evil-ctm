@@ -3,16 +3,27 @@ package com.evilctm.client.mixin;
 
 import com.evilctm.client.resource.EmissiveSuffixLoader;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.ITextureMapPopulator;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.renderer.texture.TextureMap;
+import net.minecraft.client.resources.IResourceManager;
 import net.minecraft.util.ResourceLocation;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(TextureMap.class)
 public abstract class TextureMapMixin {
+	/** Before the Pre stitch event: every Pre listener's registerSprite must already see this reload's suffix. */
+	@Inject(method = "loadSprites(Lnet/minecraft/client/resources/IResourceManager;Lnet/minecraft/client/renderer/texture/ITextureMapPopulator;)V", at = @At("HEAD"))
+	private void evilctm$loadEmissiveSuffix(IResourceManager resourceManager, ITextureMapPopulator populator, CallbackInfo ci) {
+		if ((Object) this == Minecraft.getMinecraft().getTextureMapBlocks()) {
+			EmissiveSuffixLoader.load(resourceManager);
+		}
+	}
+
 	@Inject(method = "registerSprite(Lnet/minecraft/util/ResourceLocation;)Lnet/minecraft/client/renderer/texture/TextureAtlasSprite;", at = @At("RETURN"))
 	private void evilctm$registerEmissive(ResourceLocation location, CallbackInfoReturnable<TextureAtlasSprite> cir) {
 		String suffix = EmissiveSuffixLoader.getEmissiveSuffix();

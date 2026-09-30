@@ -7,6 +7,7 @@ import javax.annotation.Nullable;
 
 import com.demonica.celeritas.guard.QuarantineGuard;
 import com.demonica.celeritas.terrain.ShaderBlockContexts;
+import com.demonica.compat.FastBlockRendererCompat;
 import com.demonica.compat.architecturecraft.ArchitectureCraftCompat;
 import com.demonica.compat.snowrealmagic.SnowRealMagicCompat;
 import com.demonica.runtime.DemonicaRuntime;
@@ -14,11 +15,13 @@ import com.evilctm.client.EvilCtmClient;
 import com.evilctm.client.layer.LayerRouter;
 import net.minecraft.block.Block;
 import net.minecraft.util.BlockRenderLayer;
+import net.minecraft.util.math.BlockPos;
 
 /**
  * {@link RenderGate} over Demonica internals (not API; checked against Demonica 0.6.0). Every call is guarded against
  * {@link LinkageError}: on failure the bridge marks itself broken, logs once and returns the conservative answer
- * (fast path off, block forced to vanilla, no layer override).
+ * (fast path off, block forced to vanilla). A broken bridge cannot say whether a block has a shader layer override,
+ * so it reports {@link #layerOverrideReliable()} false and every layer the block is meshed in counts as native.
  */
 public final class DemonicaBridge implements RenderGate {
 	private final AtomicBoolean loggedBroken = new AtomicBoolean();
@@ -77,6 +80,24 @@ public final class DemonicaBridge implements RenderGate {
 	}
 
 	@Override
+	public boolean forcedVanillaAt(Block block, BlockPos pos) {
+		if (broken) {
+			return true;
+		}
+		try {
+			return FastBlockRendererCompat.requiresVanillaRenderer(block, pos);
+		} catch (LinkageError | RuntimeException e) {
+			markBroken("FastBlockRendererCompat.requiresVanillaRenderer", e);
+			return true;
+		}
+	}
+
+	@Override
+	public boolean layerOverrideReliable() {
+		return !broken;
+	}
+
+	@Override
 	@Nullable
 	public BlockRenderLayer layerOverride(Block block) {
 		if (broken) {
@@ -108,7 +129,7 @@ public final class DemonicaBridge implements RenderGate {
 	private void markBroken(String where, Throwable t) {
 		broken = true;
 		if (loggedBroken.compareAndSet(false, true)) {
-			EvilCtmClient.LOGGER.error("Demonica bridge call {} failed; extra layers and shader layer overrides are disabled. Is this Demonica version supported?", where, t);
+			EvilCtmClient.LOGGER.error("Demonica bridge call {} failed; extra layers are disabled and shader layer overrides are unknown, so CTM routing treats every layer a block is meshed in as native. Is this Demonica version supported?", where, t);
 		}
 	}
 }

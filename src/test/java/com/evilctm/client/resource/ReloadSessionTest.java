@@ -66,6 +66,62 @@ class ReloadSessionTest {
 		assertEquals(false, CtmPropertiesLoader.isSkippedBuiltin(other, false));
 	}
 
+	private static java.util.function.Supplier<ReloadSession> countingScanner(AtomicInteger scans) {
+		var empty = CtmPropertiesLoader.loadFromPacks(List.of(), null, true);
+		return () -> {
+			scans.incrementAndGet();
+			return ReloadSession.scan(() -> empty, null);
+		};
+	}
+
+	@Test
+	void preThenPostScansOnceAndPostGetsThePreSession() {
+		AtomicInteger scans = new AtomicInteger();
+		var scanner = countingScanner(scans);
+		ReloadSession.Pending pending = new ReloadSession.Pending();
+		ReloadSession began = pending.begin(scanner);
+		assertSame(began, pending.consume(scanner));
+		assertEquals(1, scans.get());
+	}
+
+	@Test
+	void postWithoutPreScansOnce() {
+		AtomicInteger scans = new AtomicInteger();
+		ReloadSession.Pending pending = new ReloadSession.Pending();
+		pending.consume(countingScanner(scans));
+		assertEquals(1, scans.get());
+	}
+
+	@Test
+	void aConsumedSessionIsNeverReusedByTheNextReload() {
+		AtomicInteger scans = new AtomicInteger();
+		var scanner = countingScanner(scans);
+		ReloadSession.Pending pending = new ReloadSession.Pending();
+		ReloadSession first = pending.begin(scanner);
+		assertSame(first, pending.consume(scanner));
+		ReloadSession second = pending.consume(scanner);
+		assertEquals(2, scans.get());
+		assertTrue(second != first);
+	}
+
+	@Test
+	void aSecondPreReplacesAnUnconsumedSession() {
+		AtomicInteger scans = new AtomicInteger();
+		var scanner = countingScanner(scans);
+		ReloadSession.Pending pending = new ReloadSession.Pending();
+		pending.begin(scanner);
+		ReloadSession newer = pending.begin(scanner);
+		assertSame(newer, pending.consume(scanner));
+		assertEquals(2, scans.get());
+	}
+
+	@Test
+	void packFormatTwoPacksAreScanned(@TempDir Path root) throws Exception {
+		List<IResourcePack> packs = pack(root);
+		IResourcePack legacy = new net.minecraft.client.resources.LegacyV2Adapter(packs.get(0));
+		assertEquals(2, CtmPropertiesLoader.loadFromPacks(List.of(legacy), null, false).getRules().size());
+	}
+
 	@Test
 	void sessionRunsEachScanOnce() {
 		AtomicInteger rules = new AtomicInteger();

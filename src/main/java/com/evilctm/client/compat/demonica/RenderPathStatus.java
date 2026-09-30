@@ -20,6 +20,22 @@ public final class RenderPathStatus {
 		public String translationKey() {
 			return "evilctm.warning." + name().toLowerCase(java.util.Locale.ROOT);
 		}
+
+		/** The remedy for this problem: only {@link #FAST_RENDERER_OFF} is fixed by the fast block renderer option. */
+		public String hintKey() {
+			return "evilctm.warning.hint." + name().toLowerCase(java.util.Locale.ROOT);
+		}
+
+		/** The remedy, in English, for the log. */
+		public String remedy() {
+			return switch (this) {
+				case OK -> "";
+				case FAST_RENDERER_OFF -> "Enable Video Settings -> Use Fast Block Renderer (performance.use_fast_block_renderer in config/demonica-options.json)";
+				case CELERITAS_REJECTED -> "Install the Celeritas build this Demonica version accepts (see Demonica's log for the expected build)";
+				case API_MISSING, BRIDGE_BROKEN -> "Update Demonica (or Evil CTM) to versions that support each other";
+				case NOT_INVOKED -> "Please report this with your latest.log attached";
+			};
+		}
 	}
 
 	private static volatile boolean invoked;
@@ -44,6 +60,16 @@ public final class RenderPathStatus {
 		apiMissing = true;
 	}
 
+	/** True when the S20 transformer could not be registered: nothing Evil CTM grants can reach it. */
+	public static boolean apiMissing() {
+		return apiMissing;
+	}
+
+	/** Test hook: forgets a recorded {@link #recordApiMissing}. */
+	public static void clearApiMissingForTests() {
+		apiMissing = false;
+	}
+
 	/** The current problem, excluding {@link Problem#NOT_INVOKED} (which needs time in-world to decide). */
 	public static Problem evaluate() {
 		if (apiMissing) {
@@ -64,8 +90,8 @@ public final class RenderPathStatus {
 		}
 		EvilCtmClient.LOGGER.warn("==============================================================");
 		EvilCtmClient.LOGGER.warn("Evil CTM will not render connected textures: {}", problem);
-		EvilCtmClient.LOGGER.warn("Evil CTM renders only through Demonica's fast block renderer. Enable Video Settings ->");
-		EvilCtmClient.LOGGER.warn("Use Fast Block Renderer (performance.use_fast_block_renderer in config/demonica-options.json)");
+		EvilCtmClient.LOGGER.warn("Evil CTM renders only through Demonica's fast block renderer (S20 hook).");
+		EvilCtmClient.LOGGER.warn(problem.remedy());
 		EvilCtmClient.LOGGER.warn("==============================================================");
 	}
 }

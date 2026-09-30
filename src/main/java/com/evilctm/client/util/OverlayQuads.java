@@ -74,17 +74,17 @@ public final class OverlayQuads {
 	}
 
 	/**
-	 * {@code base} as emitted for a rule. Without {@code tintBlock} it is returned as is (untinted, as the rule's
-	 * {@code tintIndex} only applies together with {@code tintBlock}). With it, the tint block's colour at {@code pos}
-	 * for {@code max(tintIndex, 0)} is baked into a copy.
+	 * {@code base} as emitted for a rule. The tint block's colour at {@code pos} for {@code tintIndex} is baked into a
+	 * copy only when both {@code tintBlock} and {@code tintIndex >= 0} are set; otherwise {@code base} is returned
+	 * untinted, as in OptiFine and Continuity (the default {@code tintIndex} is -1).
 	 */
 	public static BakedQuad tinted(BakedQuad base, @Nullable IBlockState tintBlock, int tintIndex, IBlockAccess access, BlockPos pos) {
-		if (tintBlock == null) {
+		if (tintBlock == null || tintIndex < 0) {
 			return base;
 		}
 		int color;
 		try {
-			color = blockColors.get().colorMultiplier(tintBlock, access, pos, Math.max(tintIndex, 0));
+			color = blockColors.get().colorMultiplier(tintBlock, access, pos, tintIndex);
 		} catch (RuntimeException e) {
 			return base;
 		}

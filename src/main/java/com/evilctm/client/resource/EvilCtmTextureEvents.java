@@ -28,7 +28,7 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 
 /** Loads CTM rules around the block atlas stitch and publishes processors, emissive pairs and layer routing. */
 public class EvilCtmTextureEvents {
-	private ReloadSession session;
+	private final ReloadSession.Pending pending = new ReloadSession.Pending();
 	private int redirectedCompanions;
 
 	private static boolean isBlockAtlas(TextureMap map) {
@@ -44,8 +44,8 @@ public class EvilCtmTextureEvents {
 		// processor tables and cached layer masks, so the old routing stays live until Post step 4 replaces it.
 		redirectedCompanions = 0;
 		IResourceManager manager = Minecraft.getMinecraft().getResourceManager();
-		EmissiveSuffixLoader.load(manager);
-		session = scanSession();
+		// The emissive suffix was loaded by TextureMapMixin at the head of loadSprites, before any Pre listener ran.
+		ReloadSession session = pending.begin(EvilCtmTextureEvents::scanSession);
 		TextureMap textureMap = event.getMap();
 		String emissiveSuffix = EmissiveSuffixLoader.getEmissiveSuffix();
 		boolean hasSuffix = emissiveSuffix != null && !emissiveSuffix.isEmpty();
@@ -97,11 +97,7 @@ public class EvilCtmTextureEvents {
 		// 1. The missing sprite first: processor factories check sprites against it.
 		RenderUtil.setMissingSprite(textureMap.getMissingSprite());
 
-		ReloadSession current = session;
-		session = null;
-		if (current == null) {
-			current = scanSession();
-		}
+		ReloadSession current = pending.consume(EvilCtmTextureEvents::scanSession);
 		CtmPropertiesLoader.LoadingResult lastResult = current.rules();
 
 		// 2. Processor holders: OptiFine rules, then CTM-mod definitions.
@@ -111,20 +107,15 @@ public class EvilCtmTextureEvents {
 		int bloomDefinitions = 0;
 		int ctmDefinitionsLoaded = 0;
 		List<CtmDefinition> ctmDefinitions = current.definitions();
-		{
-			ctmDefinitionsLoaded = ctmDefinitions.size();
-			for (CtmDefinition definition : ctmDefinitions) {
-				TextureAtlasSprite stitched = textureMap.mapUploadedSprites.get(definition.getResourceId().toString());
-				if (definition.getLayer() != null && definition.getLayer().name().equals("BLOOM")
-						&& stitched != null && stitched != textureMap.getMissingSprite()) {
-					bloomDefinitions++;
-				}
-				CtmModLoader loader = new CtmModLoader(definition);
-				processorHolders.add(new QuadProcessors.ProcessorHolder(
-						loader.getProcessorFactory().createProcessor(definition, spriteGetter),
-						loader.getPredicatesFactory().createPredicates(definition, spriteGetter)));
+		ctmDefinitionsLoaded = ctmDefinitions.size();
+		for (CtmDefinition definition : ctmDefinitions) {
+			TextureAtlasSprite stitched = textureMap.mapUploadedSprites.get(definition.getResourceId().toString());
+			if (definition.getLayer() != null && definition.getLayer().name().equals("BLOOM")
+					&& stitched != null && stitched != textureMap.getMissingSprite()) {
+				bloomDefinitions++;
 			}
 		}
+		processorHolders.addAll(CtmModLoader.createHolders(ctmDefinitions, spriteGetter));
 
 		// 3. Emissive pairs, built off to the side and published at once.
 		Map<TextureAtlasSprite, TextureAtlasSprite> emissivePairs = new IdentityHashMap<>();

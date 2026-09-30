@@ -30,10 +30,14 @@ import net.minecraft.world.IBlockAccess;
  *     <li>Reads the published processor tables once per call and never keeps {@code pos} or {@code access}.</li>
  *     <li>Processors see the clean actual state ({@link QuadProcessors#cacheKey}) as both state and appearance state.</li>
  *     <li>Layer nativeness is keyed on the raw world state, which is what Celeritas passes to {@code canRenderInLayer}.</li>
+ *     <li>Emissive companions of a SOLID-only block are emitted in its granted CUTOUT_MIPPED pass (from the processed
+ *         base quads that pass drops), never in SOLID, which has no alpha cutoff; without the grant they stay in SOLID.</li>
  * </ul>
  */
 public final class QuadPipeline {
 	private static final ThreadLocal<ProcessingContextImpl> CTX = ThreadLocal.withInitial(ProcessingContextImpl::new);
+	private static final int SOLID_BIT = LayerRouter.bit(BlockRenderLayer.SOLID);
+	private static final int CUTOUT_MIPPED_BIT = LayerRouter.bit(BlockRenderLayer.CUTOUT_MIPPED);
 
 	private QuadPipeline() {
 	}
@@ -64,10 +68,20 @@ public final class QuadPipeline {
 			return quads;
 		}
 
-		boolean nativeLayer = LayerRouter.isNativeLayer(rawState(access, pos, s), layer);
+		IBlockState raw = rawState(access, pos, s);
+		boolean nativeLayer = LayerRouter.isNativeLayer(raw, layer);
+		int nativeMask = LayerRouter.nativeMask(raw);
+		int granted = ctmMod || emissive ? LayerRouter.grantedExtraMask(raw, pos) : 0;
+		// The layers this block is really meshed in: a CTM-mod rule for any other layer is ignored.
+		int builtMask = ctmMod ? LayerRouter.builtMask(raw, nativeMask, granted) : nativeMask;
+		// A SOLID-only block's companions go to the CUTOUT_MIPPED pass, but only when that pass is granted here.
+		boolean deferSolid = emissive && nativeMask == SOLID_BIT && (granted & CUTOUT_MIPPED_BIT) != 0;
+		// In that pass the base quads are dropped; their processed outputs carry the companions.
+		boolean collectBase = deferSolid && !nativeLayer && layer == BlockRenderLayer.CUTOUT_MIPPED;
 		ProcessingContextImpl ctx = CTX.get().begin(tables, layer);
 		try {
 			List<BakedQuad> out = null;
+			List<BakedQuad> baseOutputs = null;
 			long rand = process ? MathHelper.getPositionRandom(pos) : 0L;
 			int n = quads.size();
 			for (int i = 0; i < n; i++) {
@@ -76,8 +90,11 @@ public final class QuadPipeline {
 					out = copyPrefixIfNull(out, quads, i);
 					continue;
 				}
-				boolean include = CtmModLayerFilter.shouldRender(quad.getSprite(), layer, nativeLayer);
+				boolean include = CtmModLayerFilter.shouldRender(quad.getSprite(), layer, nativeLayer, builtMask);
 				if (!process) {
+					if (collectBase) {
+						baseOutputs = add(baseOutputs, quad);
+					}
 					if (!include) {
 						out = copyPrefixIfNull(out, quads, i);
 					} else if (CtmModLayerFilter.fullbrightFallback(quad.getSprite(), nativeLayer)) {
@@ -89,7 +106,18 @@ public final class QuadPipeline {
 					continue;
 				}
 
+				if (!include && !collectBase && !tables.anyLayerTargeting) {
+					// Dropped here and nothing (overlay, emissive companion) is taken from its processing.
+					out = copyPrefixIfNull(out, quads, i);
+					continue;
+				}
 				List<BakedQuad> produced = ProcessingChain.run(quad, s, pos, access, tables, ctx, rand);
+				if (collectBase) {
+					// produced is the context's scratch list, reused by the next run
+					for (int j = 0, m = produced.size(); j < m; j++) {
+						baseOutputs = add(baseOutputs, produced.get(j));
+					}
+				}
 				if (!include) {
 					out = copyPrefixIfNull(out, quads, i);
 					continue;
@@ -116,12 +144,20 @@ public final class QuadPipeline {
 			}
 
 			if (emissive) {
-				out = EmissivePass.apply(out, quads, layer, nativeLayer, ctx);
+				out = EmissivePass.apply(out, quads, baseOutputs, layer, nativeLayer, nativeMask, deferSolid, ctx);
 			}
 			return out != null ? out : quads;
 		} finally {
 			ctx.end();
 		}
+	}
+
+	private static List<BakedQuad> add(@Nullable List<BakedQuad> list, BakedQuad quad) {
+		if (list == null) {
+			list = new ObjectArrayList<>(4);
+		}
+		list.add(quad);
+		return list;
 	}
 
 	/** The raw world state at {@code pos}; falls back to {@code fallback} when unreadable or of another block. */

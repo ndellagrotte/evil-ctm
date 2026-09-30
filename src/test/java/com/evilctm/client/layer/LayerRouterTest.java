@@ -11,7 +11,10 @@ import java.util.List;
 import javax.annotation.Nullable;
 
 import com.evilctm.api.client.LayerTargetingProcessor;
+import com.evilctm.client.compat.demonica.RenderPathStatus;
 import com.evilctm.client.model.QuadProcessors;
+import com.evilctm.client.pipeline.QuadPipeline;
+import com.evilctm.testutil.FakeBlockAccess;
 import com.evilctm.testutil.FakeGate;
 import com.evilctm.testutil.McBootstrap;
 import com.evilctm.testutil.PipelineHarness;
@@ -19,15 +22,18 @@ import com.evilctm.testutil.TestProcessors;
 import com.evilctm.testutil.TestQuads;
 import com.evilctm.testutil.TestSprites;
 import net.minecraft.block.Block;
+import net.minecraft.block.BlockGrass;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.block.model.IBakedModel;
 import net.minecraft.client.renderer.block.model.ItemOverrideList;
+import net.minecraft.client.renderer.block.model.WeightedBakedModel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.init.Blocks;
 import net.minecraft.util.BlockRenderLayer;
 import net.minecraft.util.EnumFacing;
+import net.minecraft.util.math.BlockPos;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,7 +42,7 @@ class LayerRouterTest {
 	private FakeGate gate;
 	private TextureAtlasSprite overlaySource;
 
-	/** Mimics a block patched by BlockRenderLayerMixin. */
+	/** A block whose own canRenderInLayer asks the router (must not recurse or count the answer as native). */
 	static class MixedInBlock extends Block {
 		MixedInBlock() {
 			super(Material.ROCK);
@@ -153,6 +159,143 @@ class LayerRouterTest {
 		assertTrue(LayerRouter.isNativeLayer(state, BlockRenderLayer.SOLID));
 		assertFalse(LayerRouter.isNativeLayer(state, BlockRenderLayer.TRANSLUCENT));
 		assertEquals(LayerRouter.bit(BlockRenderLayer.SOLID), LayerRouter.nativeMask(state));
+	}
+
+	/** Overrides canRenderInLayer without calling super, with a layer that can change at runtime (like leaves). */
+	static class OverridingBlock extends Block {
+		volatile BlockRenderLayer layer = BlockRenderLayer.SOLID;
+
+		OverridingBlock() {
+			super(Material.ROCK);
+		}
+
+		@Override
+		public boolean canRenderInLayer(IBlockState state, BlockRenderLayer l) {
+			return l == layer;
+		}
+	}
+
+	@Test
+	void blockOverridingCanRenderInLayerStillGetsItsExtraLayer() {
+		OverridingBlock block = new OverridingBlock();
+		IBlockState state = block.getDefaultState();
+		assertFalse(block.canRenderInLayer(state, BlockRenderLayer.TRANSLUCENT));
+		// what the Celeritas call-site wrapper asks after the block's own answer was false
+		assertTrue(LayerRouter.allowExtraLayer(state, BlockRenderLayer.TRANSLUCENT, new BlockPos(0, 64, 0)));
+	}
+
+	@Test
+	void nativeMaskFollowsARuntimeLayerChangeWithoutAReload() {
+		OverridingBlock block = new OverridingBlock();
+		IBlockState state = block.getDefaultState();
+		assertTrue(LayerRouter.isNativeLayer(state, BlockRenderLayer.SOLID));
+		assertEquals(LayerRouter.bit(BlockRenderLayer.TRANSLUCENT), LayerRouter.extraMask(state));
+
+		block.layer = BlockRenderLayer.TRANSLUCENT;
+		assertFalse(LayerRouter.isNativeLayer(state, BlockRenderLayer.SOLID));
+		assertTrue(LayerRouter.isNativeLayer(state, BlockRenderLayer.TRANSLUCENT));
+		assertEquals(LayerRouter.bit(BlockRenderLayer.TRANSLUCENT), LayerRouter.nativeMask(state));
+		assertEquals(0, LayerRouter.extraMask(state));
+		assertFalse(LayerRouter.allowExtraLayer(state, BlockRenderLayer.TRANSLUCENT));
+
+		BakedQuad quad = TestQuads.fullFace(EnumFacing.UP, overlaySource, -1);
+		BlockPos pos = new BlockPos(1, 64, 1);
+		FakeBlockAccess access = new FakeBlockAccess().set(pos, state);
+		assertEquals(List.of(quad), QuadPipeline.transform(state, pos, access, BlockRenderLayer.TRANSLUCENT, null, List.of(quad)));
+	}
+
+	@Test
+	void missingS20ApiGrantsNothing() {
+		try {
+			RenderPathStatus.recordApiMissing();
+			LayerRouter.refreshActive();
+			assertFalse(LayerRouter.extraPossible);
+			assertFalse(LayerRouter.allowExtraLayer(Blocks.STONE.getDefaultState(), BlockRenderLayer.TRANSLUCENT));
+		} finally {
+			RenderPathStatus.clearApiMissingForTests();
+			LayerRouter.refreshActive();
+		}
+	}
+
+	@Test
+	void positionSentToVanillaGetsNothing() {
+		BlockPos pos = new BlockPos(5, 64, 5);
+		gate.forceVanillaAt(pos);
+		IBlockState stone = Blocks.STONE.getDefaultState();
+		assertFalse(LayerRouter.allowExtraLayer(stone, BlockRenderLayer.TRANSLUCENT, pos));
+		assertTrue(LayerRouter.allowExtraLayer(stone, BlockRenderLayer.TRANSLUCENT, pos.east()));
+	}
+
+	@Test
+	void shaderOverrideSuppressesExtraLayers() {
+		gate.override(Blocks.STONE, BlockRenderLayer.CUTOUT);
+		assertFalse(LayerRouter.allowExtraLayer(Blocks.STONE.getDefaultState(), BlockRenderLayer.TRANSLUCENT));
+		assertEquals(LayerRouter.bit(BlockRenderLayer.CUTOUT), LayerRouter.builtMask(Blocks.STONE.getDefaultState(), null));
+	}
+
+	@Test
+	void unreadableOverrideCountsEveryLayerAsNative() {
+		gate.overrideReliable(false);
+		IBlockState stone = Blocks.STONE.getDefaultState();
+		for (BlockRenderLayer layer : LayerRouter.LAYERS) {
+			assertTrue(LayerRouter.isNativeLayer(stone, layer));
+		}
+		assertFalse(LayerRouter.allowExtraLayer(stone, BlockRenderLayer.TRANSLUCENT));
+	}
+
+	@Test
+	void spriteOnlyInAnActualStateModelStillGrantsTheLayer() {
+		IBakedModel withOverlay = new SingleQuadModel(TestQuads.fullFace(EnumFacing.UP, overlaySource, -1));
+		IBakedModel plain = new SingleQuadModel(TestQuads.fullFace(EnumFacing.UP, TestSprites.create("test:plain"), -1));
+		ModelProbe.setModelLookupForTests(s -> s.getBlock() == Blocks.GRASS && s.getValue(BlockGrass.SNOWY) ? withOverlay : plain);
+		IBlockState raw = Blocks.GRASS.getDefaultState();
+		assertFalse(raw.getValue(BlockGrass.SNOWY));
+		assertTrue(LayerRouter.allowExtraLayer(raw, BlockRenderLayer.TRANSLUCENT));
+	}
+
+	@Test
+	void spriteOnlyInAnotherWeightedVariantStillGrantsTheLayer() {
+		IBakedModel plain = new SingleQuadModel(TestQuads.fullFace(EnumFacing.UP, TestSprites.create("test:plain"), -1));
+		IBakedModel withOverlay = new SingleQuadModel(TestQuads.fullFace(EnumFacing.UP, overlaySource, -1));
+		IBakedModel weighted = new WeightedBakedModel.Builder().add(plain, 1).add(withOverlay, 1).build();
+		assertTrue(weighted.getQuads(null, null, 42L).get(0).getSprite() != overlaySource);
+		ModelProbe.setModelLookupForTests(s -> weighted);
+		assertTrue(LayerRouter.allowExtraLayer(Blocks.STONE.getDefaultState(), BlockRenderLayer.TRANSLUCENT));
+	}
+
+	@Test
+	void modelThrowingLinkageErrorIsProbedOnceAndCachedAsEmpty() {
+		java.util.concurrent.atomic.AtomicInteger lookups = new java.util.concurrent.atomic.AtomicInteger();
+		IBakedModel broken = new SingleQuadModel(TestQuads.fullFace(EnumFacing.UP, overlaySource, -1)) {
+			@Override
+			public List<BakedQuad> getQuads(@Nullable IBlockState state, @Nullable EnumFacing side, long rand) {
+				throw new NoClassDefFoundError("optional/Dependency");
+			}
+		};
+		ModelProbe.setModelLookupForTests(st -> {
+			lookups.incrementAndGet();
+			return broken;
+		});
+		IBlockState state = new OverridingBlock().getDefaultState();
+		assertEquals(0, LayerRouter.extraMask(state));
+		int afterFirst = lookups.get();
+		assertEquals(0, LayerRouter.extraMask(state));
+		assertEquals(afterFirst, lookups.get());
+
+		com.evilctm.client.util.SpriteCalculator.ModelLookup previous = com.evilctm.client.util.SpriteCalculator.lookup;
+		java.util.concurrent.atomic.AtomicInteger spriteLookups = new java.util.concurrent.atomic.AtomicInteger();
+		try {
+			com.evilctm.client.util.SpriteCalculator.lookup = st -> {
+				spriteLookups.incrementAndGet();
+				throw new NoClassDefFoundError("optional/Dependency");
+			};
+			IBlockState other = new OverridingBlock().getDefaultState();
+			assertEquals(0, com.evilctm.client.util.SpriteCalculator.getSprites(other, EnumFacing.UP).length);
+			assertEquals(0, com.evilctm.client.util.SpriteCalculator.getSprites(other, EnumFacing.DOWN).length);
+			assertEquals(1, spriteLookups.get());
+		} finally {
+			com.evilctm.client.util.SpriteCalculator.lookup = previous;
+		}
 	}
 
 	@Test

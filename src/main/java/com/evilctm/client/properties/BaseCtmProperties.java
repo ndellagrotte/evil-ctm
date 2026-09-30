@@ -34,6 +34,7 @@ import net.minecraft.client.resources.IResourcePack;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.biome.Biome;
+import org.apache.commons.io.IOUtils;
 
 public class BaseCtmProperties implements CtmProperties {
 	public static final ResourceLocation SPECIAL_SKIP_ID = EvilCtmClient.asId("special/skip");
@@ -650,24 +651,23 @@ public class BaseCtmProperties implements CtmProperties {
 				} catch (Exception e) {
 					resources = Collections.emptyList();
 				}
+				// getAllResources opens every pack's stream (and .mcmeta stream); only the top pack's name is read.
+				String topPackName = resources.isEmpty() ? null : resources.get(resources.size() - 1).getResourcePackName();
+				for (IResource resource : resources) {
+					IOUtils.closeQuietly(resource);
+				}
 
 				if (packStr == null || packStr.equals("default")) {
-					if (!resources.isEmpty()) {
-						IResource topResource = resources.get(resources.size() - 1);
-						if (!topResource.getResourcePackName().equals(defaultPackName)) {
-							EvilCtmClient.LOGGER.debug("Invalidating '{}' because resource '{}' comes from pack '{}' instead of default pack '{}'", this.resourceId, resourceId, topResource.getResourcePackName(), defaultPackName);
-							valid = false;
-							break;
-						}
+					if (topPackName != null && !topPackName.equals(defaultPackName)) {
+						EvilCtmClient.LOGGER.debug("Invalidating '{}' because resource '{}' comes from pack '{}' instead of default pack '{}'", this.resourceId, resourceId, topPackName, defaultPackName);
+						valid = false;
+						break;
 					}
 				} else if (packStr.equals("programmer_art")) {
-					if (!resources.isEmpty()) {
-						IResource topResource = resources.get(resources.size() - 1);
-						if (!topResource.getResourcePackName().contains("programmer_art")) {
-							EvilCtmClient.LOGGER.debug("Invalidating '{}' because resource '{}' comes from pack '{}' without programmer_art", this.resourceId, resourceId, topResource.getResourcePackName());
-							valid = false;
-							break;
-						}
+					if (topPackName != null && !topPackName.contains("programmer_art")) {
+						EvilCtmClient.LOGGER.debug("Invalidating '{}' because resource '{}' comes from pack '{}' without programmer_art", this.resourceId, resourceId, topPackName);
+						valid = false;
+						break;
 					}
 				} else {
 					EvilCtmClient.LOGGER.warn("Unknown pack '" + packStr + "' in 'resourceCondition' element '" + conditionStr + "' at index " + i + " in file '" + this.resourceId + "' in pack '" + packId + "'");

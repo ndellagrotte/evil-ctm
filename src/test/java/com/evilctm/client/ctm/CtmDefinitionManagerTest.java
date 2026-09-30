@@ -47,4 +47,41 @@ class CtmDefinitionManagerTest {
 		assertNull(CtmDefinitionManager.getLogic("t:a"));
 		assertTrue(CtmDefinitionManager.isEmpty());
 	}
+
+	private static final String LOGIC = "{\"positions\":[{\"id\":\"TOP\",\"directions\":[\"up\"]}],"
+			+ "\"submaps\":{\"\":{\"type\":\"grid\",\"width\":2,\"height\":1}},"
+			+ "\"rules\":[{\"output\":\"0,0\",\"connected\":[],\"unconnected\":[\"TOP\"]},"
+			+ "{\"output\":\"1,0\",\"connected\":[\"TOP\"],\"unconnected\":[]}]}";
+
+	@Test
+	void malformedCtmJsonInOneDomainDoesNotStopTheOthers() {
+		java.util.Map<String, String> files = new java.util.HashMap<>();
+		files.put("aaa:ctm.json", "{ this is not json");
+		files.put("bbb:ctm.json", "[1, 2]");
+		files.put("ccc:ctm.json", "{\"logics\":[{\"bad\":1}, \"good\"]}");
+		files.put("ccc:ctm_logic/good.json", LOGIC);
+		IResourceManager manager = new IResourceManager() {
+			@Override
+			public Set<String> getResourceDomains() {
+				return new java.util.LinkedHashSet<>(List.of("aaa", "bbb", "ccc"));
+			}
+
+			@Override
+			public IResource getResource(ResourceLocation location) throws IOException {
+				String content = files.get(location.toString());
+				if (content == null) {
+					throw new java.io.FileNotFoundException(location.toString());
+				}
+				return new net.minecraft.client.resources.SimpleResource("test", location,
+						new java.io.ByteArrayInputStream(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)), null, null);
+			}
+
+			@Override
+			public List<IResource> getAllResources(ResourceLocation location) throws IOException {
+				return List.of(getResource(location));
+			}
+		};
+		CtmDefinitionManager.reload(manager);
+		assertTrue(CtmDefinitionManager.getLogic("ccc:good") != null);
+	}
 }

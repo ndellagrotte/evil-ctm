@@ -3,6 +3,7 @@ package com.evilctm.client.processor.simple;
 
 import static com.evilctm.client.processor.simple.SpriteProviderTestSupport.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.evilctm.client.processor.DirectionMaps;
 import com.evilctm.client.processor.OrientationMode;
@@ -123,5 +124,22 @@ class CtmSpriteProviderTest {
 		FakeBlockAccess covered = world().set(neighbour(2), STONE).set(neighbour(2).offset(FACE), STONE);
 		assertEquals(0, tile(covered, true));
 		assertEquals(1, tile(covered, false));
+	}
+
+	@Test
+	void faceLessQuadWithInnerSeamsAndAConnectingNeighbourDoesNotThrow() {
+		BakedQuad faced = quad(EnumFacing.DOWN);
+		BakedQuad faceLess = new BakedQuad(faced.getVertexData(), -1, null, faced.getSprite(), true, faced.getFormat());
+		// a null face uses the DOWN direction map; put a connecting neighbour there
+		FakeBlockAccess access = new FakeBlockAccess().set(ORIGIN, STONE).set(ORIGIN.offset(DirectionMaps.getMap(EnumFacing.DOWN)[0][2]), STONE);
+		for (SpriteProvider provider : new SpriteProvider[] {
+				provider(true),
+				new HorizontalSpriteProvider(java.util.Arrays.copyOf(sprites, 4), connectTo(Blocks.STONE), true, OrientationMode.NONE),
+				new VerticalSpriteProvider(java.util.Arrays.copyOf(sprites, 4), connectTo(Blocks.STONE), true, OrientationMode.NONE),
+				new HorizontalVerticalSpriteProvider(java.util.Arrays.copyOf(sprites, 7), connectTo(Blocks.STONE), true, OrientationMode.NONE),
+				new VerticalHorizontalSpriteProvider(java.util.Arrays.copyOf(sprites, 7), connectTo(Blocks.STONE), true, OrientationMode.NONE)}) {
+			TextureAtlasSprite picked = run(provider, faceLess, access, ORIGIN);
+			assertTrue(picked != null, provider.getClass().getSimpleName());
+		}
 	}
 }

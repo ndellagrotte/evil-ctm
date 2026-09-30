@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import javax.annotation.Nullable;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import com.google.gson.JsonObject;
@@ -43,15 +44,20 @@ public final class CtmDefinitionManager {
 		Map<String, CtmCustomLogic> built = new Object2ObjectOpenHashMap<>();
 		try {
 			for (String domain : resourceManager.getResourceDomains()) {
+				List<IResource> ctmFiles;
 				try {
-					for (IResource ctmFile : resourceManager.getAllResources(new ResourceLocation(domain, "ctm.json"))) {
-						try (InputStreamReader reader = new InputStreamReader(ctmFile.getInputStream(), StandardCharsets.UTF_8)) {
-							JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
-							loadLogics(domain, json, resourceManager, built);
-						}
-					}
+					ctmFiles = resourceManager.getAllResources(new ResourceLocation(domain, "ctm.json"));
 				} catch (IOException ignored) {
-					// no ctm.json in this domain
+					continue; // no ctm.json in this domain
+				}
+				for (IResource ctmFile : ctmFiles) {
+					// one bad ctm.json must not stop the other files and domains
+					try (ctmFile; InputStreamReader reader = new InputStreamReader(ctmFile.getInputStream(), StandardCharsets.UTF_8)) {
+						JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
+						loadLogics(domain, json, resourceManager, built);
+					} catch (IOException | RuntimeException e) {
+						EvilCtmClient.LOGGER.error("Failed to read '" + domain + ":ctm.json' in pack '" + ctmFile.getResourcePackName() + "'", e);
+					}
 				}
 			}
 		} catch (Exception e) {
@@ -63,10 +69,14 @@ public final class CtmDefinitionManager {
 	private static void loadLogics(String domain, JsonObject ctmFile, IResourceManager resourceManager, Map<String, CtmCustomLogic> into) {
 		if (ctmFile.has("logics") && ctmFile.get("logics").isJsonArray()) {
 			for (var element : ctmFile.getAsJsonArray("logics")) {
+				if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
+					EvilCtmClient.LOGGER.warn("Ignoring non-string entry '{}' in the 'logics' of '{}:ctm.json'", element, domain);
+					continue;
+				}
 				String logicName = element.getAsString();
 				try {
-					IResource resource = resourceManager.getResource(new ResourceLocation(domain, "ctm_logic/" + logicName + ".json"));
-					try (InputStreamReader reader = new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8)) {
+					try (IResource resource = resourceManager.getResource(new ResourceLocation(domain, "ctm_logic/" + logicName + ".json"));
+						 InputStreamReader reader = new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8)) {
 						JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
 						CtmLogicDefinition def = CtmLogicDefinition.fromJson(json);
 						CtmCustomLogic logic = CtmLogicBakery.bake(def);

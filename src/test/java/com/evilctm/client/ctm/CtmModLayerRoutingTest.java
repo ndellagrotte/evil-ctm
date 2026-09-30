@@ -11,6 +11,7 @@ import java.util.List;
 
 import javax.annotation.Nullable;
 
+import com.evilctm.client.config.EvilCtmConfig;
 import com.evilctm.client.layer.LayerRouter;
 import com.evilctm.client.layer.ModelProbe;
 import com.evilctm.client.model.BakedQuadLightmap;
@@ -47,7 +48,7 @@ class CtmModLayerRoutingTest {
 	private FakeBlockAccess access;
 	private int lookups;
 
-	private static final class OneQuadModel implements IBakedModel {
+	private static class OneQuadModel implements IBakedModel {
 		private final List<BakedQuad> quads;
 
 		OneQuadModel(BakedQuad quad) {
@@ -152,6 +153,93 @@ class CtmModLayerRoutingTest {
 		gate.fastPath(false);
 
 		assertFalse(LayerRouter.allowExtraLayer(stone, BlockRenderLayer.TRANSLUCENT));
+		assertKeptInSolid();
+	}
+
+	@Test
+	void extraLayersOffKeepsTheRoutedQuadInItsNativeLayer() {
+		EvilCtmConfig cfg = EvilCtmConfig.INSTANCE;
+		boolean prev = cfg.extraLayers.get();
+		try {
+			cfg.extraLayers.set(false);
+			load("{\"layer\":\"TRANSLUCENT\"}");
+			assertKeptInSolid();
+		} finally {
+			cfg.extraLayers.set(prev);
+			LayerRouter.refreshActive();
+		}
+	}
+
+	@Test
+	void shaderLayerOverrideKeepsTheRoutedQuadInThePackLayer() {
+		gate.override(Blocks.STONE, BlockRenderLayer.CUTOUT);
+		load("{\"layer\":\"TRANSLUCENT\"}");
+
+		assertFalse(LayerRouter.allowExtraLayer(stone, BlockRenderLayer.TRANSLUCENT));
+		List<BakedQuad> out = run(BlockRenderLayer.CUTOUT);
+		assertEquals(1, out.size());
+		assertSame(glow, out.get(0).getSprite());
+	}
+
+	@Test
+	void spriteMissedByTheLayerProbeStaysInItsNativeLayer() {
+		IBakedModel other = new OneQuadModel(TestQuads.fullFace(EnumFacing.UP, TestSprites.create("test:other"), -1));
+		ModelProbe.setModelLookupForTests(s -> other);
+		load("{\"layer\":\"TRANSLUCENT\"}");
+
+		assertEquals(0, LayerRouter.extraMask(stone));
+		assertKeptInSolid();
+	}
+
+	@Test
+	void layerAwareModelWithoutTheSpriteInTheRoutedLayerGetsNoExtraLayer() {
+		BakedQuad quad = TestQuads.fullFace(EnumFacing.UP, glow, -1);
+		IBakedModel solidOnly = new OneQuadModel(quad) {
+			@Override
+			public List<BakedQuad> getQuads(@Nullable IBlockState state, @Nullable EnumFacing side, long rand) {
+				BlockRenderLayer layer = net.minecraftforge.client.MinecraftForgeClient.getRenderLayer();
+				return layer == null || layer == BlockRenderLayer.SOLID ? super.getQuads(state, side, rand) : Collections.emptyList();
+			}
+		};
+		ModelProbe.setModelLookupForTests(s -> solidOnly);
+		load("{\"layer\":\"TRANSLUCENT\"}");
+
+		assertEquals(0, LayerRouter.extraMask(stone));
+		assertKeptInSolid();
+	}
+
+	@Test
+	void unreadableShaderOverrideTreatsEveryMeshedLayerAsNative() {
+		gate.overrideReliable(false);
+		load("{\"layer\":\"TRANSLUCENT\"}");
+
+		assertTrue(LayerRouter.isNativeLayer(stone, BlockRenderLayer.CUTOUT));
+		assertFalse(LayerRouter.allowExtraLayer(stone, BlockRenderLayer.TRANSLUCENT));
+		assertEquals(1, run(BlockRenderLayer.CUTOUT).size());
+	}
+
+	@Test
+	void staleSnapshotWriteCannotBringBackThePreviousRules() throws ReflectiveOperationException {
+		load("{\"layer\":\"TRANSLUCENT\"}");
+		CtmRenderLayerRouter.extraLayerMask(stone, 0);
+		java.lang.reflect.Field field = CtmRenderLayerRouter.class.getDeclaredField("snapshot");
+		field.setAccessible(true);
+		Object stale = field.get(null);
+
+		CtmRenderLayerRouter.reload(List.of());
+		ReloadEpoch.bump();
+		// a worker that read the old snapshot before the reload writes it back after the epoch bump
+		field.set(null, stale);
+
+		assertFalse(CtmRenderLayerRouter.active());
+		assertEquals(0, CtmRenderLayerRouter.extraLayerMask(stone, 0));
+		assertTrue(CtmRenderLayerRouter.shouldRender(glow, BlockRenderLayer.SOLID, false));
+	}
+
+	private void assertKeptInSolid() {
+		List<BakedQuad> out = run(BlockRenderLayer.SOLID);
+		assertEquals(1, out.size());
+		assertSame(glow, out.get(0).getSprite());
 	}
 
 	@Test

@@ -16,9 +16,13 @@ public interface ConnectionPredicate {
 		return shouldConnect(level, pos, appearanceState, state, otherPos, otherAppearanceState, otherState, face, quadSprite);
 	}
 
+	/**
+	 * With {@code innerSeams}, a connection also needs the block in front of the neighbour (along {@code face}) not to
+	 * connect. A quad without a face (some modded models) has no "in front", so that probe is skipped for it.
+	 */
 	default boolean shouldConnect(IBlockAccess level, BlockPos pos, IBlockState appearanceState, IBlockState state, BlockPos.MutableBlockPos otherPos, EnumFacing face, TextureAtlasSprite quadSprite, boolean innerSeams) {
 		if (shouldConnect(level, pos, appearanceState, state, otherPos, face, quadSprite)) {
-			if (innerSeams) {
+			if (innerSeams && face != null) {
 				otherPos.move(face);
 				return !shouldConnect(level, pos, appearanceState, state, otherPos, face, quadSprite);
 			} else {

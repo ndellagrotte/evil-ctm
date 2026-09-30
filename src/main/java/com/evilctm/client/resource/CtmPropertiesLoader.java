@@ -168,7 +168,7 @@ public class CtmPropertiesLoader {
 	}
 
 	private static void scanPack(IResourcePack pack, ScanConsumer consumer) {
-		if (!(pack instanceof AbstractResourcePack abstractPack)) {
+		if (!(ReloadSession.unwrapForScan(pack) instanceof AbstractResourcePack abstractPack)) {
 			ReloadSession.logUnscannablePack(pack);
 			return;
 		}

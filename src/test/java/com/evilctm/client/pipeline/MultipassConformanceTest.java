@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
+import com.evilctm.client.util.TileEntityNameResolver;
 import com.evilctm.testutil.FakeBlockAccess;
 import com.evilctm.testutil.FakeGate;
 import com.evilctm.testutil.PipelineHarness;
@@ -16,7 +17,9 @@ import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.init.Blocks;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.tileentity.TileEntityChest;
+import net.minecraft.tileentity.TileEntityFurnace;
 import net.minecraft.util.BlockRenderLayer;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
@@ -136,5 +139,61 @@ class MultipassConformanceTest {
 		assertSame(stone, run(harness, new FakeBlockAccess().setTileEntity(POS, other), POS, EnumFacing.NORTH, "stone").get(0).getSprite());
 		assertSame(stone, run(harness, new FakeBlockAccess().setTileEntity(POS, unnamed), POS, EnumFacing.NORTH, "stone").get(0).getSprite());
 		assertSame(stone, run(harness, new FakeBlockAccess(), POS, EnumFacing.NORTH, "stone").get(0).getSprite());
+	}
+
+	@Test
+	void nameFilterFallsBackToTheServerForAnUnsyncedFurnaceName() {
+		PipelineHarness harness = new PipelineHarness().gate(new FakeGate());
+		assertTrue(harness.addRule("minecraft:optifine/ctm/m/n.properties", fixedRule("stone", "nx") + "name=Smeltery\n"));
+		harness.publish();
+		TextureAtlasSprite nx = harness.sprite("minecraft:blocks/nx");
+		TextureAtlasSprite stone = harness.sprite("minecraft:blocks/stone");
+		java.util.List<TileEntity> rerendered = new java.util.ArrayList<>();
+		java.util.Map<TileEntity, java.util.function.Consumer<String>> pending = new java.util.HashMap<>();
+		TileEntityNameResolver.setBackendForTests(new TileEntityNameResolver.Backend() {
+			@Override
+			public boolean available() {
+				return true;
+			}
+
+			@Override
+			public void request(TileEntity te, java.util.function.Consumer<String> onClientThread) {
+				pending.put(te, onClientThread);
+			}
+
+			@Override
+			public void rerender(TileEntity te) {
+				rerendered.add(te);
+			}
+		});
+		try {
+			// the client copy of a renamed furnace has no CustomName in 1.12
+			TileEntityFurnace furnace = new TileEntityFurnace();
+			assertSame(stone, run(harness, new FakeBlockAccess().setTileEntity(POS, furnace), POS, EnumFacing.NORTH, "stone").get(0).getSprite());
+			assertEquals(1, pending.size());
+			assertSame(stone, run(harness, new FakeBlockAccess().setTileEntity(POS, furnace), POS, EnumFacing.NORTH, "stone").get(0).getSprite());
+			assertEquals(1, pending.size(), "the lookup is requested once");
+
+			pending.get(furnace).accept("Smeltery");
+			assertEquals(java.util.List.of(furnace), rerendered);
+			assertSame(nx, run(harness, new FakeBlockAccess().setTileEntity(POS, furnace), POS, EnumFacing.NORTH, "stone").get(0).getSprite());
+
+			// a replaced tile entity is looked up again
+			TileEntityFurnace replaced = new TileEntityFurnace();
+			assertSame(stone, run(harness, new FakeBlockAccess().setTileEntity(POS, replaced), POS, EnumFacing.NORTH, "stone").get(0).getSprite());
+			assertTrue(pending.containsKey(replaced));
+		} finally {
+			TileEntityNameResolver.setBackendForTests(null);
+		}
+	}
+
+	@Test
+	void nameFilterWithoutAServerRejectsAnUnnamedFurnace() {
+		PipelineHarness harness = new PipelineHarness().gate(new FakeGate());
+		assertTrue(harness.addRule("minecraft:optifine/ctm/m/n.properties", fixedRule("stone", "nx") + "name=Smeltery\n"));
+		harness.publish();
+		TextureAtlasSprite stone = harness.sprite("minecraft:blocks/stone");
+		TileEntityNameResolver.setBackendForTests(null);
+		assertSame(stone, run(harness, new FakeBlockAccess().setTileEntity(POS, new TileEntityFurnace()), POS, EnumFacing.NORTH, "stone").get(0).getSprite());
 	}
 }
