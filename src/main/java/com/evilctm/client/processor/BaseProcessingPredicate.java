@@ -52,9 +52,12 @@ public class BaseProcessingPredicate implements ProcessingPredicate {
 
 			EnumFacing.Axis axis = AxisUtil.getAxis(appearanceState);
 			if (axis == EnumFacing.Axis.X) {
+				// Clockwise about Z: the WEST end cap reads as top, EAST as bottom.
 				face = face.rotateAround(EnumFacing.Axis.Z);
-			} else if (axis == EnumFacing.Axis.Z) {
-				face = face.rotateAround(EnumFacing.Axis.X);
+			} else if (axis == EnumFacing.Axis.Z && face.getAxis() != EnumFacing.Axis.X) {
+				// Counter-clockwise about X (rotateAround(X) is the clockwise turn, so take its opposite):
+				// the NORTH end cap reads as top, SOUTH as bottom; the UP quad reads as SOUTH, DOWN as NORTH.
+				face = face.rotateAround(EnumFacing.Axis.X).getOpposite();
 			}
 
 			if (!faces.contains(face)) {
