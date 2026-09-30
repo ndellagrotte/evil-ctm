@@ -67,7 +67,7 @@ public class BaseCachingPredicates implements CachingPredicates {
 
 		@Override
 		public CachingPredicates createPredicates(T properties, Function<ResourceLocation, TextureAtlasSprite> spriteGetter) {
-			return new BaseCachingPredicates(properties.getMatchTilesSet(), properties.getMatchBlocksPredicate(), isValidForMultipass);
+			return new BaseCachingPredicates(properties.getMatchTilesSet(), properties.getBlockStateFilter(), isValidForMultipass);
 		}
 	}
 }
