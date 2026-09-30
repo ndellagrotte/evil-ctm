@@ -2,35 +2,36 @@
 package com.evilctm.client.util.biome;
 
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.function.Predicate;
 
-import it.unimi.dsi.fastutil.Hash;
-import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import net.minecraft.world.biome.Biome;
 
 public class BiomeSetPredicate implements Predicate<Biome> {
 	private final Set<BiomeHolder> holders;
-	private Set<Biome> biomes = Collections.emptySet();
+	/** Identity set, replaced wholesale and never mutated after publication. */
+	private volatile Set<Biome> biomes = Collections.emptySet();
 
 	public BiomeSetPredicate(Set<BiomeHolder> holders) {
 		this.holders = holders;
+		refresh();
 		BiomeHolderManager.addRefreshCallback(this::refresh);
 	}
 
 	@Override
 	public boolean test(Biome biome) {
-		return biomes.contains(biome);
+		return biome != null && biomes.contains(biome);
 	}
 
 	private void refresh() {
-		Set<Biome> biomes = new ObjectOpenHashSet<>(Hash.DEFAULT_INITIAL_SIZE, Hash.FAST_LOAD_FACTOR);
+		Set<Biome> set = Collections.newSetFromMap(new IdentityHashMap<>());
 		for (BiomeHolder holder : holders) {
 			Biome biome = holder.getBiome();
 			if (biome != null) {
-				biomes.add(biome);
+				set.add(biome);
 			}
 		}
-		this.biomes = biomes;
+		this.biomes = Collections.unmodifiableSet(set);
 	}
 }
