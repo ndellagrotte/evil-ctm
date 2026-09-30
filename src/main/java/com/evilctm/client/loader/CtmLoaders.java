@@ -38,23 +38,23 @@ public final class CtmLoaders {
 		CtmLoaderRegistry registry = CtmLoaderRegistry.get();
 
 		CtmLoader<OrientedConnectingCtmProperties> ctmLoader = createLoader(
-				TileAmountValidator.wrapFactory(BaseCtmProperties.wrapFactory(OrientedConnectingCtmProperties::new), new TileAmountValidator.AtLeast<>(47)),
+				BaseCtmProperties.wrapFactory(OrientedConnectingCtmProperties::new), new TileAmountValidator.AtLeast<>(47),
 				new SimpleQuadProcessor.Factory<>(new CtmSpriteProvider.Factory()), true);
 		registry.registerLoader("ctm", ctmLoader);
 		registry.registerLoader("glass", ctmLoader);
 
 		CtmLoader<OrientedConnectingCtmProperties> horizontalLoader = createLoader(
-				TileAmountValidator.wrapFactory(BaseCtmProperties.wrapFactory(OrientedConnectingCtmProperties::new), new TileAmountValidator.Exactly<>(4)),
+				BaseCtmProperties.wrapFactory(OrientedConnectingCtmProperties::new), new TileAmountValidator.Exactly<>(4),
 				new SimpleQuadProcessor.Factory<>(new HorizontalSpriteProvider.Factory()), true);
 		registry.registerLoader("horizontal", horizontalLoader);
 		registry.registerLoader("bookshelf", horizontalLoader);
 
 		registry.registerLoader("vertical", createLoader(
-				TileAmountValidator.wrapFactory(BaseCtmProperties.wrapFactory(OrientedConnectingCtmProperties::new), new TileAmountValidator.Exactly<>(4)),
+				BaseCtmProperties.wrapFactory(OrientedConnectingCtmProperties::new), new TileAmountValidator.Exactly<>(4),
 				new SimpleQuadProcessor.Factory<>(new VerticalSpriteProvider.Factory()), true));
 
 		registry.registerLoader("top", createLoader(
-				TileAmountValidator.wrapFactory(BaseCtmProperties.wrapFactory(ConnectingCtmProperties::new), new TileAmountValidator.Exactly<>(1)),
+				BaseCtmProperties.wrapFactory(ConnectingCtmProperties::new), new TileAmountValidator.Exactly<>(1),
 				new TopQuadProcessor.Factory(), true));
 
 		registry.registerLoader("random", createLoader(
@@ -62,17 +62,22 @@ public final class CtmLoaders {
 				new SimpleQuadProcessor.Factory<>(new RandomSpriteProvider.Factory()), true));
 
 		registry.registerLoader("repeat", createLoader(
-				TileAmountValidator.wrapFactory(BaseCtmProperties.wrapFactory(RepeatCtmProperties::new), new RepeatCtmProperties.Validator<>()),
+				BaseCtmProperties.wrapFactory(RepeatCtmProperties::new), new RepeatCtmProperties.Validator<>(),
 				new SimpleQuadProcessor.Factory<>(new RepeatSpriteProvider.Factory()), true));
 
 		// CleanContinuity used a bare constructor here, so init() never ran and every fixed rule matched everything.
 		registry.registerLoader("fixed", createLoader(
-				TileAmountValidator.wrapFactory(BaseCtmProperties.wrapFactory(BaseCtmProperties::new), new TileAmountValidator.Exactly<>(1)),
+				BaseCtmProperties.wrapFactory(BaseCtmProperties::new), new TileAmountValidator.Exactly<>(1),
 				new SimpleQuadProcessor.Factory<>(new FixedSpriteProvider.Factory()), true));
 
 		CompactLoaders.register(registry);
 		HorizontalVerticalLoaders.register(registry);
 		OverlayLoaders.register(registry);
+	}
+
+	/** Registers a method whose properties are checked by {@code validator} (see {@link TileAmountValidator#wrapFactory}). */
+	public static <T extends BaseCtmProperties> CtmLoader<T> createLoader(CtmProperties.Factory<T> propertiesFactory, TileAmountValidator<T> validator, QuadProcessor.Factory<T> processorFactory, boolean isValidForMultipass) {
+		return createLoader(TileAmountValidator.wrapFactory(propertiesFactory, validator), processorFactory, isValidForMultipass);
 	}
 
 	public static <T extends BaseCtmProperties> CtmLoader<T> createLoader(CtmProperties.Factory<T> propertiesFactory, QuadProcessor.Factory<T> processorFactory, boolean isValidForMultipass) {

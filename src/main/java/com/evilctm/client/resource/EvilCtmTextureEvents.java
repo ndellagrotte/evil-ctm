@@ -37,7 +37,8 @@ public class EvilCtmTextureEvents {
 		if (!isBlockAtlas(event.getMap())) {
 			return;
 		}
-		CtmRenderLayerRouter.reload(List.of());
+		// The layer router is not cleared here: chunk builds during the stitch still use the old
+		// processor tables and cached layer masks, so the old routing stays live until Post step 4 replaces it.
 		EmissiveSuffixLoader.load(Minecraft.getMinecraft().getResourceManager());
 		BiomeHolderManager.clearCache();
 		lastResult = CtmPropertiesLoader.loadAll();

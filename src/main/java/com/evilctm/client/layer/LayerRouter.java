@@ -150,7 +150,7 @@ public final class LayerRouter {
 				return false;
 			}
 			return (extraMask(rawState) & bit(layer)) != 0;
-		} catch (RuntimeException | LinkageError e) {
+		} catch (RuntimeException | LinkageError | StackOverflowError e) {
 			return false;
 		}
 	}
@@ -163,10 +163,17 @@ public final class LayerRouter {
 		}
 		int nativeMask = nativeMask(rawState);
 		int mask = 0;
-		for (ExtraLayerSource source : SOURCES) {
-			if (source.active()) {
-				mask |= source.extraLayerMask(rawState, nativeMask);
+		// Sources probe models; a getQuads that calls canRenderInLayer must not re-enter this computation.
+		Boolean previous = BYPASS.get();
+		BYPASS.set(Boolean.TRUE);
+		try {
+			for (ExtraLayerSource source : SOURCES) {
+				if (source.active()) {
+					mask |= source.extraLayerMask(rawState, nativeMask);
+				}
 			}
+		} finally {
+			BYPASS.set(previous);
 		}
 		mask &= ~nativeMask;
 		cache.putIfAbsent(rawState, mask);
