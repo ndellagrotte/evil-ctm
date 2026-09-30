@@ -53,4 +53,19 @@ public final class EmissiveSuffixLoader {
 			return false;
 		}
 	}
+
+	/** The sprite id of {@code spriteId}'s emissive companion. */
+	public static ResourceLocation companionId(ResourceLocation spriteId, String suffix) {
+		return new ResourceLocation(spriteId.getNamespace(), spriteId.getPath() + suffix);
+	}
+
+	/** Whether the pack file behind the redirected sprite {@code spriteId} exists. */
+	public static boolean hasRedirectedTexture(IResourceManager manager, ResourceLocation spriteId) {
+		ResourceLocation imageId = ResourceRedirectHandler.redirect(new ResourceLocation(spriteId.getNamespace(), "textures/" + spriteId.getPath() + ".png"));
+		try (InputStream ignored = manager.getResource(imageId).getInputStream()) {
+			return true;
+		} catch (IOException e) {
+			return false;
+		}
+	}
 }

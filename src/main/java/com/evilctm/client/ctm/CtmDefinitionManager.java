@@ -6,6 +6,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import javax.annotation.Nullable;
 
+import java.util.Collections;
 import java.util.Map;
 
 import com.google.gson.JsonObject;
@@ -28,21 +29,25 @@ import net.minecraft.util.ResourceLocation;
  * {@code "type"} strings that reference these ids.
  */
 public final class CtmDefinitionManager {
-	private static final Map<String, CtmCustomLogic> LOGICS = new Object2ObjectOpenHashMap<>();
+	private static volatile Map<String, CtmCustomLogic> logics = Map.of();
 
 	private CtmDefinitionManager() {
 	}
 
 	public static void reload() {
-		IResourceManager resourceManager = Minecraft.getMinecraft().getResourceManager();
-		clear();
+		reload(Minecraft.getMinecraft().getResourceManager());
+	}
+
+	/** Builds the logic map off to the side and publishes it as one immutable snapshot. */
+	public static void reload(IResourceManager resourceManager) {
+		Map<String, CtmCustomLogic> built = new Object2ObjectOpenHashMap<>();
 		try {
 			for (String domain : resourceManager.getResourceDomains()) {
 				try {
 					for (IResource ctmFile : resourceManager.getAllResources(new ResourceLocation(domain, "ctm.json"))) {
 						try (InputStreamReader reader = new InputStreamReader(ctmFile.getInputStream(), StandardCharsets.UTF_8)) {
 							JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
-							loadLogics(domain, json, resourceManager);
+							loadLogics(domain, json, resourceManager, built);
 						}
 					}
 				} catch (IOException ignored) {
@@ -52,9 +57,10 @@ public final class CtmDefinitionManager {
 		} catch (Exception e) {
 			EvilCtmClient.LOGGER.error("Failed to reload CTM logic definitions", e);
 		}
+		logics = Collections.unmodifiableMap(built);
 	}
 
-	private static void loadLogics(String domain, JsonObject ctmFile, IResourceManager resourceManager) {
+	private static void loadLogics(String domain, JsonObject ctmFile, IResourceManager resourceManager, Map<String, CtmCustomLogic> into) {
 		if (ctmFile.has("logics") && ctmFile.get("logics").isJsonArray()) {
 			for (var element : ctmFile.getAsJsonArray("logics")) {
 				String logicName = element.getAsString();
@@ -65,7 +71,7 @@ public final class CtmDefinitionManager {
 						CtmLogicDefinition def = CtmLogicDefinition.fromJson(json);
 						CtmCustomLogic logic = CtmLogicBakery.bake(def);
 						String id = domain + ":" + logicName;
-						registerLogic(id, logic);
+						into.put(id, logic);
 						EvilCtmClient.LOGGER.debug("Registered CTM logic '{}' with {} positions", id, def.positions.size());
 					}
 				} catch (Exception e) {
@@ -76,19 +82,21 @@ public final class CtmDefinitionManager {
 	}
 
 	public static void registerLogic(String id, CtmCustomLogic logic) {
-		LOGICS.put(id, logic);
+		Map<String, CtmCustomLogic> copy = new Object2ObjectOpenHashMap<>(logics);
+		copy.put(id, logic);
+		logics = Collections.unmodifiableMap(copy);
 	}
 
 	@Nullable
 	public static CtmCustomLogic getLogic(String id) {
-		return LOGICS.get(id);
+		return logics.get(id);
 	}
 
 	public static void clear() {
-		LOGICS.clear();
+		logics = Map.of();
 	}
 
 	public static boolean isEmpty() {
-		return LOGICS.isEmpty();
+		return logics.isEmpty();
 	}
 }

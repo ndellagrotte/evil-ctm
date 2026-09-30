@@ -17,6 +17,7 @@ import javax.annotation.Nullable;
 
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import com.evilctm.client.EvilCtmClient;
+import com.evilctm.client.resource.ReloadSession;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.AbstractResourcePack;
 import net.minecraft.client.resources.IResource;
@@ -172,7 +173,7 @@ public final class CtmMcmetaLoader {
 
 	private static void scanPack(IResourcePack pack, BiConsumer<String, String> consumer) {
 		if (!(pack instanceof AbstractResourcePack abstractPack)) {
-			EvilCtmClient.LOGGER.debug("Skipping non-abstract resource pack '{}' while scanning CTM Mod metadata", pack.getPackName());
+			ReloadSession.logUnscannablePack(pack);
 			return;
 		}
 

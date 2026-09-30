@@ -44,4 +44,13 @@ class ResourceRedirectHandlerTest {
 		assertEquals("optifine/ctm/default/glass/blue/42", redirected.getPath());
 		assertEquals("minecraft", redirected.getNamespace());
 	}
+
+	@Test
+	void emissiveCompanionOfMcpatcherTileRedirects() {
+		ResourceLocation sprite = new ResourceLocation("minecraft", "evilctm_reserved/mcpatcher/ctm/x/0");
+		ResourceLocation companion = EmissiveSuffixLoader.companionId(sprite, "_e");
+		assertEquals("evilctm_reserved/mcpatcher/ctm/x/0_e", companion.getPath());
+		ResourceLocation image = new ResourceLocation(companion.getNamespace(), "textures/" + companion.getPath() + ".png");
+		assertEquals("mcpatcher/ctm/x/0_e.png", ResourceRedirectHandler.redirect(image).getPath());
+	}
 }

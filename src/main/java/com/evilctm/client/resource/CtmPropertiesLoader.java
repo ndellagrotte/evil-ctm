@@ -25,6 +25,7 @@ import com.evilctm.api.client.CtmLoaderRegistry;
 import com.evilctm.api.client.CtmProperties;
 import com.evilctm.api.client.QuadProcessor;
 import com.evilctm.client.EvilCtmClient;
+import com.evilctm.client.config.EvilCtmConfig;
 import com.evilctm.client.model.QuadProcessors;
 import com.evilctm.client.properties.BaseCtmProperties;
 import com.evilctm.client.util.biome.BiomeHolderManager;
@@ -39,14 +40,21 @@ import net.minecraftforge.fml.client.FMLClientHandler;
 
 public class CtmPropertiesLoader {
 	private final IResourceManager resourceManager;
+	private final boolean includeBuiltin;
 	/** Resource-id prefix of the rules shipped in this mod's own assets. */
 	public static final String BUILTIN_PREFIX = "evilctm:optifine/ctm/default/";
 
 	private final List<LoadedRule<?>> containers = new ObjectArrayList<>();
 	private final Set<ResourceLocation> blockAtlasSpriteDependencies = new ObjectOpenHashSet<>();
 
-	private CtmPropertiesLoader(IResourceManager resourceManager) {
+	private CtmPropertiesLoader(IResourceManager resourceManager, boolean includeBuiltin) {
 		this.resourceManager = resourceManager;
+		this.includeBuiltin = includeBuiltin;
+	}
+
+	/** True when a rule file with this id is skipped: the mod's built-in rules while the toggle is off. */
+	public static boolean isSkippedBuiltin(ResourceLocation resourceId, boolean includeBuiltin) {
+		return !includeBuiltin && resourceId.toString().startsWith(BUILTIN_PREFIX);
 	}
 
 	public static LoadingResult loadAllWithState() {
@@ -57,33 +65,38 @@ public class CtmPropertiesLoader {
 	}
 
 	public static LoadingResult loadAll() {
-		return new CtmPropertiesLoader(Minecraft.getMinecraft().getResourceManager()).loadAllPacks();
-	}
-
-	private LoadingResult loadAllPacks() {
-		int packPriority = 0;
+		List<IResourcePack> packs = new ObjectArrayList<>();
 		Set<String> seenPacks = new HashSet<>();
-
 		for (IResourcePack pack : FMLClientHandler.instance().getResourcePackList()) {
 			if (seenPacks.add(pack.getPackName())) {
-				loadAll(pack, packPriority++);
+				packs.add(pack);
 			}
 		}
-
 		ResourcePackRepository repository = Minecraft.getMinecraft().getResourcePackRepository();
 		for (ResourcePackRepository.Entry entry : repository.getRepositoryEntries()) {
 			if (seenPacks.add(entry.getResourcePackName())) {
-				loadAll(entry.getResourcePack(), packPriority++);
+				packs.add(entry.getResourcePack());
 			}
 		}
-
 		IResourcePack serverPack = repository.getServerResourcePack();
 		if (serverPack != null && seenPacks.add(serverPack.getPackName())) {
-			loadAll(serverPack, packPriority++);
+			packs.add(serverPack);
 		}
+		return loadFromPacks(packs, Minecraft.getMinecraft().getResourceManager(), EvilCtmConfig.INSTANCE.builtinDefaultRules.get());
+	}
 
+	/** Scans the given packs (already de-duplicated, in priority order) once and returns the parsed rules. */
+	public static LoadingResult loadFromPacks(List<IResourcePack> packs, @Nullable IResourceManager resourceManager, boolean includeBuiltin) {
+		return new CtmPropertiesLoader(resourceManager, includeBuiltin).loadAllPacks(packs);
+	}
+
+	private LoadingResult loadAllPacks(List<IResourcePack> packs) {
+		int packPriority = 0;
+		for (IResourcePack pack : packs) {
+			loadAll(pack, packPriority++);
+		}
 		containers.sort(Comparator.reverseOrder());
-		EvilCtmClient.LOGGER.debug("Loaded {} CTM property containers from {} packs", containers.size(), seenPacks.size());
+		EvilCtmClient.LOGGER.debug("Loaded {} CTM property containers from {} packs", containers.size(), packs.size());
 		return new LoadingResult(containers, blockAtlasSpriteDependencies);
 	}
 
@@ -91,6 +104,9 @@ public class CtmPropertiesLoader {
 		int[] propertyCount = new int[1];
 		scanPack(pack, (namespace, path) -> {
 			if (!path.endsWith(".properties")) {
+				return;
+			}
+			if (isSkippedBuiltin(new ResourceLocation(namespace, path), includeBuiltin)) {
 				return;
 			}
 			propertyCount[0]++;
@@ -153,7 +169,7 @@ public class CtmPropertiesLoader {
 
 	private static void scanPack(IResourcePack pack, ScanConsumer consumer) {
 		if (!(pack instanceof AbstractResourcePack abstractPack)) {
-			EvilCtmClient.LOGGER.debug("Skipping non-abstract resource pack '{}' while scanning CTM properties", pack.getPackName());
+			ReloadSession.logUnscannablePack(pack);
 			return;
 		}
 
@@ -252,6 +268,16 @@ public class CtmPropertiesLoader {
 
 		public List<LoadedRule<?>> getRules() {
 			return containers;
+		}
+
+		/** Rule counts keyed by method name, in first-seen order. */
+		public java.util.Map<String, Integer> countByMethod() {
+			java.util.Map<String, Integer> counts = new java.util.TreeMap<>();
+			for (LoadedRule<?> rule : containers) {
+				String method = rule.properties() instanceof BaseCtmProperties base ? base.getMethod() : "?";
+				counts.merge(method, 1, Integer::sum);
+			}
+			return counts;
 		}
 
 		public Set<ResourceLocation> getBlockAtlasSpriteDependencies() {

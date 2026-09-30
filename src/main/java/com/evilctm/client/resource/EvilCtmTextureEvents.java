@@ -4,6 +4,7 @@ package com.evilctm.client.resource;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 import com.evilctm.client.EvilCtmClient;
@@ -20,13 +21,15 @@ import com.evilctm.impl.client.EmissiveSpriteApiImpl;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.renderer.texture.TextureMap;
+import net.minecraft.client.resources.IResourceManager;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.client.event.TextureStitchEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 
 /** Loads CTM rules around the block atlas stitch and publishes processors, emissive pairs and layer routing. */
 public class EvilCtmTextureEvents {
-	private CtmPropertiesLoader.LoadingResult lastResult;
+	private ReloadSession session;
+	private int redirectedCompanions;
 
 	private static boolean isBlockAtlas(TextureMap map) {
 		return map != null && map == Minecraft.getMinecraft().getTextureMapBlocks();
@@ -39,35 +42,50 @@ public class EvilCtmTextureEvents {
 		}
 		// The layer router is not cleared here: chunk builds during the stitch still use the old
 		// processor tables and cached layer masks, so the old routing stays live until Post step 4 replaces it.
-		EmissiveSuffixLoader.load(Minecraft.getMinecraft().getResourceManager());
-		BiomeHolderManager.clearCache();
-		lastResult = CtmPropertiesLoader.loadAll();
-		BiomeHolderManager.refreshHolders();
+		redirectedCompanions = 0;
+		IResourceManager manager = Minecraft.getMinecraft().getResourceManager();
+		EmissiveSuffixLoader.load(manager);
+		session = scanSession();
 		TextureMap textureMap = event.getMap();
-		EvilCtmClient.LOGGER.debug("Registering {} redirected CTM sprite dependencies", lastResult.getBlockAtlasSpriteDependencies().size());
-		for (ResourceLocation spriteId : lastResult.getBlockAtlasSpriteDependencies()) {
+		String emissiveSuffix = EmissiveSuffixLoader.getEmissiveSuffix();
+		boolean hasSuffix = emissiveSuffix != null && !emissiveSuffix.isEmpty();
+		Set<ResourceLocation> dependencies = session.rules().getBlockAtlasSpriteDependencies();
+		EvilCtmClient.LOGGER.debug("Registering {} redirected CTM sprite dependencies", dependencies.size());
+		for (ResourceLocation spriteId : dependencies) {
 			textureMap.setTextureEntry(new RedirectedTextureAtlasSprite(spriteId));
+			if (hasSuffix && !spriteId.getPath().endsWith(emissiveSuffix)) {
+				ResourceLocation companion = EmissiveSuffixLoader.companionId(spriteId, emissiveSuffix);
+				if (EmissiveSuffixLoader.hasRedirectedTexture(manager, companion)) {
+					textureMap.setTextureEntry(new RedirectedTextureAtlasSprite(companion));
+					redirectedCompanions++;
+				}
+			}
 		}
 
 		// CTM Mod format: register additional textures (base + sheet) into the block atlas.
 		// CTM texture paths are vanilla block-atlas paths (e.g. "minecraft:blocks/glass-ctm"),
 		// loaded from textures/<path>.png, so the vanilla registerSprite path is used.
-		if (EvilCtmConfig.INSTANCE.ctmModTextures.get()) {
-			List<CtmDefinition> ctmDefinitions = CtmMcmetaLoader.loadAll();
-			String emissiveSuffix = EmissiveSuffixLoader.getEmissiveSuffix();
-			for (CtmDefinition definition : ctmDefinitions) {
-				for (ResourceLocation spriteId : definition.getSpriteDependencies()) {
-					if (emissiveSuffix != null && !emissiveSuffix.isEmpty()
-							&& spriteId.getPath().endsWith(emissiveSuffix)
-							&& !EmissiveSuffixLoader.hasTexture(Minecraft.getMinecraft().getResourceManager(), spriteId)) {
-						continue;
-					}
-					// registerSprite is idempotent for already-registered sprites
-					textureMap.registerSprite(spriteId);
+		for (CtmDefinition definition : session.definitions()) {
+			for (ResourceLocation spriteId : definition.getSpriteDependencies()) {
+				if (hasSuffix && spriteId.getPath().endsWith(emissiveSuffix)
+						&& !EmissiveSuffixLoader.hasTexture(manager, spriteId)) {
+					continue;
 				}
+				// registerSprite is idempotent for already-registered sprites
+				textureMap.registerSprite(spriteId);
 			}
-			EvilCtmClient.LOGGER.debug("Registered CTM Mod sprite dependencies from {} definitions", ctmDefinitions.size());
 		}
+	}
+
+	private static ReloadSession scanSession() {
+		return ReloadSession.scan(
+				() -> {
+					BiomeHolderManager.clearCache();
+					CtmPropertiesLoader.LoadingResult result = CtmPropertiesLoader.loadAll();
+					BiomeHolderManager.refreshHolders();
+					return result;
+				},
+				EvilCtmConfig.INSTANCE.ctmModTextures.get() ? CtmMcmetaLoader::loadAll : null);
 	}
 
 	@SubscribeEvent
@@ -79,11 +97,12 @@ public class EvilCtmTextureEvents {
 		// 1. The missing sprite first: processor factories check sprites against it.
 		RenderUtil.setMissingSprite(textureMap.getMissingSprite());
 
-		if (lastResult == null) {
-			BiomeHolderManager.clearCache();
-			lastResult = CtmPropertiesLoader.loadAll();
-			BiomeHolderManager.refreshHolders();
+		ReloadSession current = session;
+		session = null;
+		if (current == null) {
+			current = scanSession();
 		}
+		CtmPropertiesLoader.LoadingResult lastResult = current.rules();
 
 		// 2. Processor holders: OptiFine rules, then CTM-mod definitions.
 		Function<ResourceLocation, TextureAtlasSprite> spriteGetter = id -> textureMap.getAtlasSprite(id.toString());
@@ -91,9 +110,8 @@ public class EvilCtmTextureEvents {
 		EvilCtmClient.LOGGER.debug("Built {} CTM processor holders", processorHolders.size());
 		int bloomDefinitions = 0;
 		int ctmDefinitionsLoaded = 0;
-		List<CtmDefinition> ctmDefinitions = List.of();
-		if (EvilCtmConfig.INSTANCE.ctmModTextures.get()) {
-			ctmDefinitions = CtmMcmetaLoader.loadAll();
+		List<CtmDefinition> ctmDefinitions = current.definitions();
+		{
 			ctmDefinitionsLoaded = ctmDefinitions.size();
 			for (CtmDefinition definition : ctmDefinitions) {
 				TextureAtlasSprite stitched = textureMap.mapUploadedSprites.get(definition.getResourceId().toString());
@@ -134,10 +152,10 @@ public class EvilCtmTextureEvents {
 		LayerRouter.refreshActive();
 
 		CtmMcmetaLoader.Diagnostics diagnostics = CtmMcmetaLoader.getLastDiagnostics();
-		EvilCtmClient.LOGGER.info("CTM reload: {} processor holders, {} CTM-mod definitions, {} stitched BLOOM definitions, {} emissive sprite pairs, {} invalid metadata files, {} unresolved resources",
-				processorHolders.size(), ctmDefinitionsLoaded, bloomDefinitions, emissivePairs.size(),
+		EvilCtmClient.LOGGER.info("CTM reload: rules {} (by method {}), {} processor holders, {} CTM-mod definitions, {} stitched BLOOM definitions, {} emissive sprite pairs, {} redirected sprites ({} emissive companions), atlas size {}, {} invalid metadata files, {} unresolved resources",
+				lastResult.getRules().size(), lastResult.countByMethod(), processorHolders.size(), ctmDefinitionsLoaded, bloomDefinitions, emissivePairs.size(),
+				lastResult.getBlockAtlasSpriteDependencies().size() + redirectedCompanions, redirectedCompanions, textureMap.mapUploadedSprites.size(),
 				EvilCtmConfig.INSTANCE.ctmModTextures.get() ? diagnostics.invalidMetadata() : 0,
 				EvilCtmConfig.INSTANCE.ctmModTextures.get() ? diagnostics.unresolvedResources() : 0);
-		lastResult = null;
 	}
 }
