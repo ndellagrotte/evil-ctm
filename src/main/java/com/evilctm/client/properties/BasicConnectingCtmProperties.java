@@ -6,10 +6,9 @@ import java.util.Properties;
 
 import com.evilctm.client.EvilCtmClient;
 import com.evilctm.client.processor.ConnectionPredicate;
+import com.evilctm.client.util.SpriteCalculator;
+import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.block.model.BakedQuad;
-import net.minecraft.client.renderer.block.model.IBakedModel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.IResourceManager;
 import net.minecraft.client.resources.IResourcePack;
@@ -42,7 +41,7 @@ public class BasicConnectingCtmProperties extends BaseCtmProperties {
 		try {
 			connectionPredicate = ConnectionType.valueOf(connectStr.trim().toUpperCase(Locale.ROOT));
 		} catch (IllegalArgumentException e) {
-			EvilCtmClient.LOGGER.warn("Unknown 'connect' value '" + connectStr + "' in file '" + resourceId + "' in pack '" + packId + "'");
+			EvilCtmClient.LOGGER.warn("Unknown 'connect' value '" + connectStr + "' (expected block, tile, material or state) in file '" + resourceId + "' in pack '" + packId + "'");
 		}
 	}
 
@@ -68,46 +67,42 @@ public class BasicConnectingCtmProperties extends BaseCtmProperties {
 	}
 
 	public enum ConnectionType implements ConnectionPredicate {
+		/** Same block and same metadata on the raw states (stained glass colours do not connect). */
 		BLOCK {
 			@Override
 			public boolean shouldConnect(IBlockAccess level, BlockPos pos, IBlockState appearanceState, IBlockState state, BlockPos otherPos, IBlockState otherAppearanceState, IBlockState otherState, EnumFacing face, TextureAtlasSprite quadSprite) {
-				return appearanceState.getBlock() == otherAppearanceState.getBlock();
+				if (state == otherState) {
+					return true;
+				}
+				Block block = otherState.getBlock();
+				return state.getBlock() == block && state.getBlock().getMetaFromState(state) == block.getMetaFromState(otherState);
 			}
 		},
+		/** The neighbour's model uses the quad's sprite on that face. */
 		TILE {
 			@Override
 			public boolean shouldConnect(IBlockAccess level, BlockPos pos, IBlockState appearanceState, IBlockState state, BlockPos otherPos, IBlockState otherAppearanceState, IBlockState otherState, EnumFacing face, TextureAtlasSprite quadSprite) {
-				if (appearanceState == otherAppearanceState) {
+				if (state == otherState) {
 					return true;
 				}
-				return stateUsesSprite(otherAppearanceState, face, quadSprite);
+				return SpriteCalculator.usesSprite(otherAppearanceState, face, quadSprite);
 			}
 		},
+		MATERIAL {
+			@Override
+			public boolean shouldConnect(IBlockAccess level, BlockPos pos, IBlockState appearanceState, IBlockState state, BlockPos otherPos, IBlockState otherAppearanceState, IBlockState otherState, EnumFacing face, TextureAtlasSprite quadSprite) {
+				if (state == otherState) {
+					return true;
+				}
+				return state.getMaterial() == otherState.getMaterial();
+			}
+		},
+		/** Continuity extension (not in OptiFine): the appearance states must be identical. */
 		STATE {
 			@Override
 			public boolean shouldConnect(IBlockAccess level, BlockPos pos, IBlockState appearanceState, IBlockState state, BlockPos otherPos, IBlockState otherAppearanceState, IBlockState otherState, EnumFacing face, TextureAtlasSprite quadSprite) {
-				return appearanceState == otherAppearanceState;
+				return state == otherState || appearanceState == otherAppearanceState;
 			}
-		};
-
-		private static boolean stateUsesSprite(IBlockState state, EnumFacing face, TextureAtlasSprite sprite) {
-			IBakedModel model = Minecraft.getMinecraft().getBlockRendererDispatcher().getBlockModelShapes().getModelForState(state);
-			if (model == null) {
-				return false;
-			}
-			if (face != null && containsSprite(model.getQuads(state, face, 0), sprite)) {
-				return true;
-			}
-			return containsSprite(model.getQuads(state, null, 0), sprite);
-		}
-
-		private static boolean containsSprite(java.util.List<BakedQuad> quads, TextureAtlasSprite sprite) {
-			for (BakedQuad quad : quads) {
-				if (quad.getSprite() == sprite) {
-					return true;
-				}
-			}
-			return false;
 		}
 	}
 }
