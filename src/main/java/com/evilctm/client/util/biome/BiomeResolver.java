@@ -1,19 +1,17 @@
 /* Evil CTM. SPDX-License-Identifier: LGPL-3.0-only. Derived from CleanContinuity / NeoContinuity / Continuity (LGPL-3.0); see NOTICE.md. */
 package com.evilctm.client.util.biome;
 
-import java.util.Locale;
 import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
 
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
-import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.biome.Biome;
 
 /**
- * Parses the {@code biomes=} property into a predicate. Wave 1 keeps CleanContinuity's behaviour exactly: a leading
- * {@code !} negates the whole list, and every token becomes a lowercase {@link ResourceLocation} holder resolved
- * through {@link BiomeHolderManager}.
+ * Parses the {@code biomes=} property into a predicate. A leading {@code !} negates the whole list; each remaining
+ * token is kept raw and resolved by {@link BiomeHolderManager} (display name, {@code nether} alias, registry id,
+ * {@code minecraft:} path, compact path, then any namespace).
  */
 public final class BiomeResolver {
 	private BiomeResolver() {
@@ -54,8 +52,7 @@ public final class BiomeResolver {
 			if (biomeStr.isEmpty()) {
 				continue;
 			}
-			ResourceLocation biomeId = new ResourceLocation(biomeStr.toLowerCase(Locale.ROOT));
-			biomeHolderSet.add(BiomeHolderManager.getOrCreateHolder(biomeId));
+			biomeHolderSet.add(BiomeHolderManager.getOrCreateHolder(biomeStr));
 		}
 
 		if (biomeHolderSet.isEmpty()) {
