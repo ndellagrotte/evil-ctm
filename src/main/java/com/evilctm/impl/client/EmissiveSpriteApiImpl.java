@@ -16,21 +16,53 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 public final class EmissiveSpriteApiImpl implements EmissiveSpriteApi {
 	public static final EmissiveSpriteApiImpl INSTANCE = new EmissiveSpriteApiImpl();
 
-	private volatile Map<TextureAtlasSprite, TextureAtlasSprite> map = new IdentityHashMap<>();
+	private static final String CTM_TILE_PREFIX = "evilctm_reserved/";
+
+	/** The pair map and its derived flag, swapped together so a reader never sees one without the other. */
+	private record Published(Map<TextureAtlasSprite, TextureAtlasSprite> map, boolean ctmTilePairs) {
+	}
+
+	private volatile Published published = new Published(new IdentityHashMap<>(), false);
 
 	@Override
 	@Nullable
 	public TextureAtlasSprite getEmissiveSprite(TextureAtlasSprite sprite) {
-		return map.get(sprite);
+		return published.map.get(sprite);
 	}
 
-	/** Publishes a copy of {@code pairs} (identity-keyed). */
+	/** Publishes a copy of {@code pairs} (identity-keyed) in one volatile write. */
 	public void publish(Map<TextureAtlasSprite, TextureAtlasSprite> pairs) {
-		map = new IdentityHashMap<>(pairs);
+		Map<TextureAtlasSprite, TextureAtlasSprite> copy = new IdentityHashMap<>(pairs);
+		boolean ctmTiles = false;
+		for (TextureAtlasSprite base : copy.keySet()) {
+			if (isCtmTile(base)) {
+				ctmTiles = true;
+				break;
+			}
+		}
+		published = new Published(copy, ctmTiles);
+	}
+
+	/** The currently published pairs, read-only; one call observes one complete publish. */
+	public Map<TextureAtlasSprite, TextureAtlasSprite> snapshot() {
+		return java.util.Collections.unmodifiableMap(published.map);
 	}
 
 	public static boolean hasAny() {
-		return !INSTANCE.map.isEmpty();
+		return !INSTANCE.published.map.isEmpty();
+	}
+
+	/** True when any base sprite with an emissive pair is a CTM tile (its icon path starts with {@code evilctm_reserved/}). */
+	public static boolean hasCtmTilePairs() {
+		return INSTANCE.published.ctmTilePairs;
+	}
+
+	private static boolean isCtmTile(@Nullable TextureAtlasSprite sprite) {
+		String name = sprite != null ? sprite.getIconName() : null;
+		if (name == null) {
+			return false;
+		}
+		return name.substring(name.indexOf(':') + 1).startsWith(CTM_TILE_PREFIX);
 	}
 
 	public void clear() {
