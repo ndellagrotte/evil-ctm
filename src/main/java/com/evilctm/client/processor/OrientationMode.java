@@ -1,8 +1,8 @@
 /* Evil CTM. SPDX-License-Identifier: LGPL-3.0-only. Derived from CleanContinuity / NeoContinuity / Continuity (LGPL-3.0); see NOTICE.md. */
 package com.evilctm.client.processor;
 
+import com.evilctm.client.util.AxisUtil;
 import com.evilctm.client.util.QuadUtil;
-import net.minecraft.block.properties.IProperty;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.util.EnumFacing;
@@ -26,21 +26,8 @@ public enum OrientationMode {
 				if (face == null) {
 					yield 0;
 				}
-				IProperty<?> axisProperty = null;
-				for (IProperty<?> property : state.getProperties().keySet()) {
-					if (property.getName().equals("axis")) {
-						axisProperty = property;
-						break;
-					}
-				}
-				if (axisProperty == null) {
-					yield 0;
-				}
-				Object axisValue = state.getValue(axisProperty);
-				if (axisValue instanceof EnumFacing.Axis axis) {
-					yield AXIS_ORIENTATIONS[axis.ordinal()][face.ordinal()];
-				}
-				yield 0;
+				EnumFacing.Axis axis = AxisUtil.getAxis(state);
+				yield axis == null ? 0 : AXIS_ORIENTATIONS[axis.ordinal()][face.ordinal()];
 			}
 			case TEXTURE -> QuadUtil.getTextureOrientation(quad);
 		};

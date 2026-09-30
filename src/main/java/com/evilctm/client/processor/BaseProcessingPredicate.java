@@ -10,7 +10,7 @@ import javax.annotation.Nullable;
 
 import com.evilctm.api.client.ProcessingDataProvider;
 import com.evilctm.client.properties.BaseCtmProperties;
-import net.minecraft.block.properties.IProperty;
+import com.evilctm.client.util.AxisUtil;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -50,22 +50,14 @@ public class BaseProcessingPredicate implements ProcessingPredicate {
 				return false;
 			}
 
-			IProperty<?> axisProperty = null;
-			for (IProperty<?> property : appearanceState.getProperties().keySet()) {
-				if (property.getName().equals("axis")) {
-					axisProperty = property;
-					break;
-				}
-			}
-			if (axisProperty != null) {
-				Object axisValue = appearanceState.getValue(axisProperty);
-				if (axisValue instanceof EnumFacing.Axis axis) {
-					if (axis == EnumFacing.Axis.X) {
-						face = face.rotateAround(EnumFacing.Axis.Z);
-					} else if (axis == EnumFacing.Axis.Z) {
-						face = face.rotateAround(EnumFacing.Axis.X);
-					}
-				}
+			EnumFacing.Axis axis = AxisUtil.getAxis(appearanceState);
+			if (axis == EnumFacing.Axis.X) {
+				// Clockwise about Z: the WEST end cap reads as top, EAST as bottom.
+				face = face.rotateAround(EnumFacing.Axis.Z);
+			} else if (axis == EnumFacing.Axis.Z && face.getAxis() != EnumFacing.Axis.X) {
+				// Counter-clockwise about X (rotateAround(X) is the clockwise turn, so take its opposite):
+				// the NORTH end cap reads as top, SOUTH as bottom; the UP quad reads as SOUTH, DOWN as NORTH.
+				face = face.rotateAround(EnumFacing.Axis.X).getOpposite();
 			}
 
 			if (!faces.contains(face)) {
