@@ -23,7 +23,13 @@ public final class AxisUtil {
 	/** The state's axis, or null when the state has none (or {@code LOG_AXIS=NONE}, or a non-pillar quartz). */
 	@Nullable
 	public static EnumFacing.Axis getAxis(IBlockState state) {
-		IProperty<?> property = PROPERTIES.computeIfAbsent(state.getBlock(), block -> findProperty(state)).orElse(null);
+		Block block = state.getBlock();
+		Optional<IProperty<?>> cached = PROPERTIES.get(block);
+		if (cached == null) {
+			cached = findProperty(state);
+			PROPERTIES.putIfAbsent(block, cached);
+		}
+		IProperty<?> property = cached.orElse(null);
 		if (property == null) {
 			return null;
 		}

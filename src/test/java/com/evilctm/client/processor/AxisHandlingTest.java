@@ -61,12 +61,42 @@ class AxisHandlingTest {
 	}
 
 	@Test
-	void topFaceRuleFollowsTheLogAxis() {
+	void topBottomRulesFollowTheXLogAxis() {
 		EnumSet<EnumFacing> top = EnumSet.of(EnumFacing.UP);
+		EnumSet<EnumFacing> bottom = EnumSet.of(EnumFacing.DOWN);
+		EnumSet<EnumFacing> both = EnumSet.of(EnumFacing.UP, EnumFacing.DOWN);
 		IBlockState x = log(BlockLog.EnumAxis.X);
-		assertTrue(accepts(top, x, EnumFacing.EAST));
 		assertTrue(accepts(top, x, EnumFacing.WEST));
+		assertFalse(accepts(top, x, EnumFacing.EAST));
 		assertFalse(accepts(top, x, EnumFacing.UP));
+		assertTrue(accepts(bottom, x, EnumFacing.EAST));
+		assertFalse(accepts(bottom, x, EnumFacing.WEST));
+		assertTrue(accepts(both, x, EnumFacing.EAST));
+		assertTrue(accepts(both, x, EnumFacing.WEST));
+		assertFalse(accepts(both, x, EnumFacing.UP));
+	}
+
+	@Test
+	void topBottomRulesFollowTheZLogAxis() {
+		EnumSet<EnumFacing> top = EnumSet.of(EnumFacing.UP);
+		EnumSet<EnumFacing> bottom = EnumSet.of(EnumFacing.DOWN);
+		IBlockState z = log(BlockLog.EnumAxis.Z);
+		assertTrue(accepts(top, z, EnumFacing.SOUTH));
+		assertFalse(accepts(top, z, EnumFacing.NORTH));
+		assertTrue(accepts(bottom, z, EnumFacing.NORTH));
+		assertFalse(accepts(bottom, z, EnumFacing.SOUTH));
+		assertFalse(accepts(top, z, EnumFacing.UP));
+	}
+
+	@Test
+	void sideRulesOnSidewaysLogs() {
+		EnumSet<EnumFacing> sides = EnumSet.of(EnumFacing.NORTH, EnumFacing.SOUTH, EnumFacing.EAST, EnumFacing.WEST);
+		IBlockState x = log(BlockLog.EnumAxis.X);
+		assertTrue(accepts(sides, x, EnumFacing.UP));
+		assertTrue(accepts(sides, x, EnumFacing.DOWN));
+		assertTrue(accepts(sides, x, EnumFacing.NORTH));
+		assertFalse(accepts(sides, x, EnumFacing.WEST));
+		assertTrue(accepts(EnumSet.of(EnumFacing.EAST), x, EnumFacing.UP));
 	}
 
 	@Test

@@ -52,9 +52,9 @@ public class BaseProcessingPredicate implements ProcessingPredicate {
 
 			EnumFacing.Axis axis = AxisUtil.getAxis(appearanceState);
 			if (axis == EnumFacing.Axis.X) {
-				face = toCanonicalFace(face, EnumFacing.EAST, EnumFacing.WEST);
+				face = face.rotateAround(EnumFacing.Axis.Z);
 			} else if (axis == EnumFacing.Axis.Z) {
-				face = toCanonicalFace(face, EnumFacing.SOUTH, EnumFacing.NORTH);
+				face = face.rotateAround(EnumFacing.Axis.X);
 			}
 
 			if (!faces.contains(face)) {
@@ -82,21 +82,6 @@ public class BaseProcessingPredicate implements ProcessingPredicate {
 		}
 
 		return true;
-	}
-
-	/** Maps a face of a block lying on its side onto the face of an upright block that shows the same part of the texture; both end caps count as the top. */
-	private static EnumFacing toCanonicalFace(EnumFacing face, EnumFacing positiveEnd, EnumFacing negativeEnd) {
-		if (face == positiveEnd) {
-			return EnumFacing.UP;
-		}
-		if (face == negativeEnd) {
-			return EnumFacing.UP;
-		}
-		return switch (face) {
-			case UP -> negativeEnd;
-			case DOWN -> positiveEnd;
-			default -> face;
-		};
 	}
 
 	public static BaseProcessingPredicate fromProperties(BaseCtmProperties properties) {
