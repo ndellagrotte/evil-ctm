@@ -1,133 +1,155 @@
 /* Evil CTM. SPDX-License-Identifier: LGPL-3.0-only. Derived from CleanContinuity / NeoContinuity / Continuity (LGPL-3.0); see NOTICE.md. */
 package com.evilctm.client.ctm;
 
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.evilctm.client.EvilCtmClient;
+import javax.annotation.Nullable;
+
 import com.evilctm.client.config.EvilCtmConfig;
+import com.evilctm.client.layer.ModelProbe;
+import com.evilctm.client.model.ReloadEpoch;
 import net.minecraft.block.state.IBlockState;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.block.model.IBakedModel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.util.BlockRenderLayer;
 import net.minecraft.util.EnumFacing;
-import net.minecraftforge.client.ForgeHooksClient;
-import net.minecraftforge.client.MinecraftForgeClient;
 
-/** Routes CTM metadata's per-texture layers through the block's normal layer checks. */
+/**
+ * Per-texture layer rules from CTM-mod metadata. Whether a layer is native to a block comes from
+ * {@code LayerRouter.isNativeLayer}; this class only knows which sprites want which layer and which models use them.
+ */
 public final class CtmRenderLayerRouter {
-	private static volatile Snapshot snapshot = new Snapshot(Map.of(), Set.of());
-	private static final Map<IBlockState, Set<BlockRenderLayer>> modelLayers = new ConcurrentHashMap<>();
-	private static final Set<BlockLayer> forcedLayers = ConcurrentHashMap.newKeySet();
-	private static final ThreadLocal<Boolean> scanningModel = ThreadLocal.withInitial(() -> false);
+	private static final EnumFacing[] FACES_AND_NULL = {EnumFacing.DOWN, EnumFacing.UP, EnumFacing.NORTH,
+			EnumFacing.SOUTH, EnumFacing.WEST, EnumFacing.EAST, null};
+
+	private static volatile Snapshot snapshot = new Snapshot(Long.MIN_VALUE, Map.of(), 0);
 
 	private CtmRenderLayerRouter() {
 	}
 
 	public static void reload(List<CtmDefinition> definitions) {
 		Map<String, LayerRule> next = new HashMap<>();
+		int targets = 0;
 		for (CtmDefinition definition : definitions) {
 			if (definition.getLayer() != null) {
-				next.putIfAbsent(definition.getResourceId().toString(),
-						new LayerRule(definition.getLayer(), definition.hasEmissiveFallback()));
+				LayerRule rule = new LayerRule(definition.getLayer(), definition.hasEmissiveFallback());
+				if (next.putIfAbsent(definition.getResourceId().toString(), rule) == null) {
+					targets |= 1 << rule.layer().ordinal();
+				}
 			}
 		}
-		modelLayers.clear();
-		forcedLayers.clear();
-		Set<BlockRenderLayer> targetLayers = EnumSet.noneOf(BlockRenderLayer.class);
-		for (LayerRule rule : next.values()) {
-			targetLayers.add(rule.layer());
+		snapshot = new Snapshot(ReloadEpoch.current(), Map.copyOf(next), targets);
+	}
+
+	/** The current snapshot; rules carry over an epoch change but the per-state model cache starts empty. */
+	private static Snapshot snapshot() {
+		Snapshot s = snapshot;
+		long epoch = ReloadEpoch.current();
+		if (s.epoch != epoch) {
+			s = new Snapshot(epoch, s.spriteLayers, s.targetMask);
+			snapshot = s;
 		}
-		snapshot = new Snapshot(Map.copyOf(next), Set.copyOf(targetLayers));
+		return s;
 	}
 
 	/** True when any loaded CTM-mod definition carries a {@code layer}. */
 	public static boolean active() {
-		return !snapshot.spriteLayers().isEmpty();
+		return !snapshot.spriteLayers.isEmpty();
+	}
+
+	/**
+	 * Layers (as a {@code 1 << ordinal} mask) that {@code state}'s model uses through a sprite with a layer rule and
+	 * that are not in {@code nativeMask}.
+	 */
+	public static int extraLayerMask(IBlockState state, int nativeMask) {
+		Snapshot s = snapshot();
+		if (s.targetMask == 0) {
+			return 0;
+		}
+		return modelLayerMask(s, state) & s.targetMask & ~nativeMask;
 	}
 
 	public static boolean allowAdditionalLayer(IBlockState state, BlockRenderLayer layer) {
-		if (!EvilCtmConfig.INSTANCE.connectedTextures.get() || !EvilCtmConfig.INSTANCE.ctmModTextures.get()
-				|| !snapshot.targetLayers().contains(layer) || scanningModel.get()) {
+		EvilCtmConfig cfg = EvilCtmConfig.INSTANCE;
+		if (!cfg.connectedTextures.get() || !cfg.ctmModTextures.get()) {
 			return false;
 		}
-		boolean modelHasLayer = modelLayers.computeIfAbsent(state, CtmRenderLayerRouter::findModelLayers).contains(layer);
-		if (modelHasLayer) {
-			forcedLayers.add(new BlockLayer(state, layer));
-			return true;
-		}
-		return false;
+		Snapshot s = snapshot();
+		int bit = 1 << layer.ordinal();
+		return (s.targetMask & bit) != 0 && (modelLayerMask(s, state) & bit) != 0;
 	}
 
-	public static boolean isRoutedLayer(IBlockState state, BlockRenderLayer layer) {
-		return forcedLayers.contains(new BlockLayer(state, layer));
-	}
-
-	public static boolean shouldRender(TextureAtlasSprite sprite, BlockRenderLayer layer, boolean routedLayer) {
-		LayerRule rule = sprite == null ? null : snapshot.spriteLayers().get(sprite.getIconName());
+	public static boolean shouldRender(@Nullable TextureAtlasSprite sprite, BlockRenderLayer layer, boolean routedLayer) {
+		LayerRule rule = ruleFor(sprite);
 		return rule == null ? !routedLayer : rule.layer() == layer || (rule.emissiveFallback() && !routedLayer);
 	}
 
-	public static boolean shouldProcessWrappedOverlay(TextureAtlasSprite sprite, BlockRenderLayer layer,
+	public static boolean shouldProcessWrappedOverlay(@Nullable TextureAtlasSprite sprite, BlockRenderLayer layer,
 			boolean routedLayer) {
 		return shouldRender(sprite, layer, routedLayer);
 	}
 
-	public static boolean shouldGenerateSuffixOverlay(TextureAtlasSprite sprite) {
-		return sprite != null && !snapshot.spriteLayers().containsKey(sprite.getIconName());
+	public static boolean shouldGenerateSuffixOverlay(@Nullable TextureAtlasSprite sprite) {
+		return sprite != null && ruleFor(sprite) == null;
 	}
 
-	public static boolean shouldFullbrightEmissiveFallback(TextureAtlasSprite sprite, boolean routedLayer) {
-		LayerRule rule = sprite == null ? null : snapshot.spriteLayers().get(sprite.getIconName());
+	public static boolean shouldFullbrightEmissiveFallback(@Nullable TextureAtlasSprite sprite, boolean routedLayer) {
+		LayerRule rule = ruleFor(sprite);
 		return rule != null && rule.emissiveFallback() && !routedLayer;
 	}
 
-	private static Set<BlockRenderLayer> findModelLayers(IBlockState state) {
-		EnumSet<BlockRenderLayer> found = EnumSet.noneOf(BlockRenderLayer.class);
-		BlockRenderLayer previousLayer = MinecraftForgeClient.getRenderLayer();
-		scanningModel.set(true);
-		try {
-			IBakedModel model = Minecraft.getMinecraft().getBlockRendererDispatcher().getModelForState(state);
-			for (BlockRenderLayer candidate : snapshot.targetLayers()) {
-				ForgeHooksClient.setRenderLayer(candidate);
-				for (EnumFacing face : EnumFacing.VALUES) {
-					collectLayers(model.getQuads(state, face, 0), found);
+	@Nullable
+	private static LayerRule ruleFor(@Nullable TextureAtlasSprite sprite) {
+		return sprite == null ? null : snapshot.spriteLayers.get(sprite.getIconName());
+	}
+
+	private static int modelLayerMask(Snapshot s, IBlockState state) {
+		Integer cached = s.modelLayers.get(state);
+		if (cached != null) {
+			return cached;
+		}
+		int mask = findModelLayers(s, state);
+		s.modelLayers.putIfAbsent(state, mask);
+		return mask;
+	}
+
+	private static int findModelLayers(Snapshot s, IBlockState state) {
+		IBakedModel model = ModelProbe.model(state);
+		if (model == null) {
+			return 0;
+		}
+		int found = 0;
+		for (EnumFacing face : FACES_AND_NULL) {
+			for (BakedQuad quad : ModelProbe.quads(model, state, face)) {
+				TextureAtlasSprite sprite = quad.getSprite();
+				if (sprite != null) {
+					LayerRule rule = s.spriteLayers.get(sprite.getIconName());
+					if (rule != null) {
+						found |= 1 << rule.layer().ordinal();
+					}
 				}
-				collectLayers(model.getQuads(state, null, 0), found);
 			}
-		} catch (RuntimeException e) {
-			EvilCtmClient.LOGGER.warn("Could not inspect block model layers for CTM metadata on '{}'", state, e);
-		} finally {
-			ForgeHooksClient.setRenderLayer(previousLayer);
-			scanningModel.remove();
 		}
 		return found;
-	}
-
-	private static void collectLayers(List<BakedQuad> quads, Set<BlockRenderLayer> found) {
-		for (BakedQuad quad : quads) {
-			TextureAtlasSprite sprite = quad.getSprite();
-			if (sprite != null) {
-				LayerRule rule = snapshot.spriteLayers().get(sprite.getIconName());
-				if (rule != null) {
-					found.add(rule.layer());
-				}
-			}
-		}
-	}
-
-	private record BlockLayer(IBlockState state, BlockRenderLayer layer) {
 	}
 
 	private record LayerRule(BlockRenderLayer layer, boolean emissiveFallback) {
 	}
 
-	private record Snapshot(Map<String, LayerRule> spriteLayers, Set<BlockRenderLayer> targetLayers) {
+	private static final class Snapshot {
+		final long epoch;
+		final Map<String, LayerRule> spriteLayers;
+		final int targetMask;
+		final ConcurrentHashMap<IBlockState, Integer> modelLayers = new ConcurrentHashMap<>();
+
+		Snapshot(long epoch, Map<String, LayerRule> spriteLayers, int targetMask) {
+			this.epoch = epoch;
+			this.spriteLayers = spriteLayers;
+			this.targetMask = targetMask;
+		}
 	}
 }

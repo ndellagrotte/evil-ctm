@@ -4,9 +4,8 @@ package com.evilctm.client.layer;
 import com.evilctm.client.config.EvilCtmConfig;
 import com.evilctm.client.ctm.CtmRenderLayerRouter;
 import net.minecraft.block.state.IBlockState;
-import net.minecraft.util.BlockRenderLayer;
 
-/** Extra layers requested by CTM-mod {@code layer} metadata; wraps {@link CtmRenderLayerRouter#allowAdditionalLayer}. */
+/** Extra layers requested by CTM-mod {@code layer} metadata; delegates to {@link CtmRenderLayerRouter}; guards live in {@link LayerRouter}. */
 public final class CtmModLayerSource implements ExtraLayerSource {
 	public static final CtmModLayerSource INSTANCE = new CtmModLayerSource();
 
@@ -21,13 +20,7 @@ public final class CtmModLayerSource implements ExtraLayerSource {
 	@Override
 	public int extraLayerMask(IBlockState rawState, int nativeMask) {
 		try {
-			int mask = 0;
-			for (BlockRenderLayer layer : LayerRouter.LAYERS) {
-				if ((nativeMask & LayerRouter.bit(layer)) == 0 && CtmRenderLayerRouter.allowAdditionalLayer(rawState, layer)) {
-					mask |= LayerRouter.bit(layer);
-				}
-			}
-			return mask;
+			return CtmRenderLayerRouter.extraLayerMask(rawState, nativeMask);
 		} catch (RuntimeException e) {
 			return 0;
 		}

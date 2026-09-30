@@ -2,8 +2,6 @@
 /* Portions transcribed from Chisel-Team ConnectedTexturesMod CTMLogic; see NOTICE.md. */
 package com.evilctm.client.ctm;
 
-import java.util.EnumSet;
-
 import com.evilctm.client.processor.ConnectionPredicate;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
