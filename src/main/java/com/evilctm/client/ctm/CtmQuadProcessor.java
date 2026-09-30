@@ -1,17 +1,17 @@
 /* Evil CTM. SPDX-License-Identifier: LGPL-3.0-only. Derived from CleanContinuity / NeoContinuity / Continuity (LGPL-3.0); see NOTICE.md. */
 package com.evilctm.client.ctm;
 
-import java.util.EnumMap;
-import java.util.EnumSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
 import java.util.function.Function;
 
 import javax.annotation.Nullable;
 
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import com.evilctm.api.client.ProcessingDataKey;
+import com.evilctm.api.client.ProcessingDataKeyRegistry;
 import com.evilctm.api.client.QuadProcessor;
+import com.evilctm.client.EvilCtmClient;
 import com.evilctm.client.model.BakedQuadLightmap;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.renderer.block.model.BakedQuad;
@@ -31,8 +31,21 @@ import net.minecraft.world.IBlockAccess;
  * the output quads are produced by {@link QuadClipper} plus {@code transformUVs} remapping.</p>
  */
 public class CtmQuadProcessor implements QuadProcessor {
-	/** Pooled per-thread scratch list; the results are copied into the context's extras. */
-	private static final ThreadLocal<List<BakedQuad>> SCRATCH = ThreadLocal.withInitial(ObjectArrayList::new);
+	/** Per-context scratch (output list, mutable positions, neighbour masks); reset between quads by the chain. */
+	static final ProcessingDataKey<Scratch> SCRATCH_KEY = ProcessingDataKeyRegistry.get().registerKey(
+			EvilCtmClient.asId("ctm_quad_scratch"), Scratch::new, Scratch::reset);
+
+	/** Reusable working storage for one processing context. */
+	static final class Scratch {
+		final List<BakedQuad> out = new ObjectArrayList<>();
+		final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+		final BlockPos.MutableBlockPos pos2 = new BlockPos.MutableBlockPos();
+		final int[] neighbor = new int[6];
+
+		void reset() {
+			out.clear();
+		}
+	}
 
 	protected final CtmDefinition properties;
 	protected final TextureAtlasSprite[] sprites;
@@ -67,10 +80,11 @@ public class CtmQuadProcessor implements QuadProcessor {
 
 	@Override
 	public ProcessingResult processQuad(BakedQuad quad, TextureAtlasSprite sprite, IBlockAccess level, BlockPos pos, IBlockState appearanceState, IBlockState state, long rand, int pass, ProcessingContext context) {
-		List<BakedQuad> out = SCRATCH.get();
+		Scratch scratch = context.getData(SCRATCH_KEY);
+		List<BakedQuad> out = scratch.out;
 		out.clear();
 		try {
-			transformQuad(quad, sprite, level, pos, appearanceState, state, rand, out);
+			transformQuad(quad, sprite, level, pos, appearanceState, state, rand, out, scratch);
 			if (out.isEmpty()) {
 				return ProcessingResult.DISCARD;
 			}
@@ -85,13 +99,17 @@ public class CtmQuadProcessor implements QuadProcessor {
 	}
 
 	protected void transformQuad(BakedQuad quad, TextureAtlasSprite sprite, IBlockAccess level, BlockPos pos, IBlockState appearanceState, IBlockState state, long rand, List<BakedQuad> out) {
+		transformQuad(quad, sprite, level, pos, appearanceState, state, rand, out, new Scratch());
+	}
+
+	protected void transformQuad(BakedQuad quad, TextureAtlasSprite sprite, IBlockAccess level, BlockPos pos, IBlockState appearanceState, IBlockState state, long rand, List<BakedQuad> out, Scratch scratch) {
 		EnumFacing face = quad.getFace();
 		switch (type) {
 			case NORMAL -> handleNormal(quad, sprite, out);
 			case CTM -> handleCtm(quad, sprite, level, pos, appearanceState, state, face, out);
 			case SCTM -> handleSctm(quad, sprite, level, pos, appearanceState, state, face, out);
 			case HORIZONTAL, VERTICAL -> handlePlane(quad, sprite, level, pos, appearanceState, state, face, out);
-			case PILLAR -> handlePillar(quad, sprite, level, pos, appearanceState, state, face, out);
+			case PILLAR -> handlePillar(quad, sprite, level, pos, appearanceState, state, face, out, scratch);
 			case RANDOM, PATTERN -> handleMap(quad, sprite, level, pos, appearanceState, state, face, rand, out);
 			case EDGES -> handleEdges(quad, sprite, level, pos, appearanceState, state, face, out);
 			case EDGES_FULL -> handleEdgesFull(quad, sprite, level, pos, appearanceState, state, face, out);
@@ -202,64 +220,75 @@ public class CtmQuadProcessor implements QuadProcessor {
 		}
 	}
 
-	protected void handlePillar(BakedQuad quad, TextureAtlasSprite sprite, IBlockAccess level, BlockPos pos, IBlockState appearanceState, IBlockState state, EnumFacing face, List<BakedQuad> out) {
+	protected void handlePillar(BakedQuad quad, TextureAtlasSprite sprite, IBlockAccess level, BlockPos pos, IBlockState appearanceState, IBlockState state, EnumFacing face, List<BakedQuad> out, Scratch scratch) {
 		// Pillar logic: check the 6 world neighbors, apply CTM's priority pruning (vertical beats
 		// east/west beats north/south), then pick a 2x2 cell of the pillar sheet and rotate it.
 		TextureAtlasSprite base = sprites[0];
 		TextureAtlasSprite pillar = sprites.length > 1 ? sprites[1] : base;
 
-		// connections of the current block per facing
-		EnumSet<EnumFacing> connections = EnumSet.noneOf(EnumFacing.class);
+				BlockPos.MutableBlockPos other = scratch.pos;
+		BlockPos.MutableBlockPos other2 = scratch.pos2;
+
+		// connections of the current block per facing (bit = facing ordinal)
+		int connections = 0;
 		for (EnumFacing f : EnumFacing.VALUES) {
-			BlockPos other = pos.offset(f);
+			other.setPos(pos.getX() + f.getXOffset(), pos.getY() + f.getYOffset(), pos.getZ() + f.getZOffset());
 			if (connectionPredicate.shouldConnect(level, pos, appearanceState, state, other, face, sprite)) {
-				connections.add(f);
+				connections |= 1 << f.ordinal();
 			}
 		}
 
-		// per-neighbor connection sets (for the blockConnectionY/Z pruning)
-		Map<EnumFacing, EnumSet<EnumFacing>> neighborConnections = new EnumMap<>(EnumFacing.class);
+		// per-neighbor connection masks (for the blockConnectionY/Z pruning)
+		int[] neighborConnections = scratch.neighbor;
 		for (EnumFacing f : EnumFacing.VALUES) {
-			BlockPos other = pos.offset(f);
-			IBlockState otherState = level.getBlockState(other);
-			IBlockState otherAppearance = otherState.getActualState(level, other);
-			EnumSet<EnumFacing> set = EnumSet.noneOf(EnumFacing.class);
+			BlockPos neighborPos = pos.offset(f);
+			IBlockState otherState = level.getBlockState(neighborPos);
+			IBlockState otherAppearance = otherState.getActualState(level, neighborPos);
+			int set = 0;
 			for (EnumFacing f2 : EnumFacing.VALUES) {
-				BlockPos other2 = other.offset(f2);
-				if (connectionPredicate.shouldConnect(level, other, otherAppearance, otherState, other2, f2, sprite)) {
-					set.add(f2);
+				other2.setPos(neighborPos.getX() + f2.getXOffset(), neighborPos.getY() + f2.getYOffset(), neighborPos.getZ() + f2.getZOffset());
+				if (connectionPredicate.shouldConnect(level, neighborPos, otherAppearance, otherState, other2, f2, sprite)) {
+					set |= 1 << f2.ordinal();
 				}
 			}
-			neighborConnections.put(f, set);
+			neighborConnections[f.ordinal()] = set;
 		}
 
 		// Prune connections by priority
-		EnumSet<EnumFacing> real = EnumSet.copyOf(connections);
-		if (connectedOr(real, EnumFacing.UP, EnumFacing.DOWN)) {
-			real.removeIf(f -> f.getAxis().isHorizontal());
-		} else if (connectedOr(real, EnumFacing.EAST, EnumFacing.WEST)) {
-			real.removeIf(f -> f == EnumFacing.NORTH || f == EnumFacing.SOUTH);
-			real.removeIf(f -> blockConnectionZ(f, neighborConnections));
+		int real = connections;
+		if (connectedOr(real, UP_DOWN)) {
+			real &= ~HORIZONTAL_MASK;
+		} else if (connectedOr(real, EAST_WEST)) {
+			real &= ~NORTH_SOUTH;
+			for (EnumFacing f : EnumFacing.VALUES) {
+				if ((real & (1 << f.ordinal())) != 0 && blockConnection(f, EnumFacing.Axis.Z, neighborConnections)) {
+					real &= ~(1 << f.ordinal());
+				}
+			}
 		} else {
-			real.removeIf(f -> blockConnectionY(f, neighborConnections));
+			for (EnumFacing f : EnumFacing.VALUES) {
+				if ((real & (1 << f.ordinal())) != 0 && blockConnectionY(f, neighborConnections)) {
+					real &= ~(1 << f.ordinal());
+				}
+			}
 		}
 
 		int rotation = 0;
 		CtmSubmap uvs = CtmSubmap.x2Grid()[0][0];
-		if (face.getAxis().isHorizontal() && connectedOr(real, EnumFacing.UP, EnumFacing.DOWN)) {
+		if (face.getAxis().isHorizontal() && connectedOr(real, UP_DOWN)) {
 			uvs = pillarUvs(real, EnumFacing.UP, EnumFacing.DOWN);
-		} else if (connectedOr(real, EnumFacing.EAST, EnumFacing.WEST)) {
+		} else if (connectedOr(real, EAST_WEST)) {
 			rotation = 1;
 			uvs = pillarUvs(real, EnumFacing.EAST, EnumFacing.WEST);
-		} else if (connectedOr(real, EnumFacing.NORTH, EnumFacing.SOUTH)) {
+		} else if (connectedOr(real, NORTH_SOUTH)) {
 			uvs = pillarUvs(real, EnumFacing.NORTH, EnumFacing.SOUTH);
 			if (face == EnumFacing.DOWN) {
 				rotation += 2;
 			}
 		}
 
-		boolean connected = !real.isEmpty();
-		if (connected && !connectedOr(real, EnumFacing.UP, EnumFacing.DOWN)) {
+		boolean connected = real != 0;
+		if (connected && !connectedOr(real, UP_DOWN)) {
 			if (face == EnumFacing.EAST) {
 				rotation += 1;
 			}
@@ -271,11 +300,11 @@ public class CtmQuadProcessor implements QuadProcessor {
 			}
 		}
 		// End cap: connection opposite this face -> render as unconnected base
-		if (connected && real.contains(face.getOpposite())) {
+		if (connected && (real & (1 << face.getOpposite().ordinal())) != 0) {
 			connected = false;
 		}
 		// Free-standing horizontal face -> short column texture
-		if (real.isEmpty() && face.getAxis().isHorizontal()) {
+		if (real == 0 && face.getAxis().isHorizontal()) {
 			connected = true;
 		}
 
@@ -287,35 +316,33 @@ public class CtmQuadProcessor implements QuadProcessor {
 		}
 	}
 
-	private static boolean connectedOr(EnumSet<EnumFacing> set, EnumFacing... facings) {
-		for (EnumFacing f : facings) {
-			if (set.contains(f)) {
-				return true;
-			}
-		}
-		return false;
+	private static final int UP_DOWN = (1 << EnumFacing.UP.ordinal()) | (1 << EnumFacing.DOWN.ordinal());
+	private static final int EAST_WEST = (1 << EnumFacing.EAST.ordinal()) | (1 << EnumFacing.WEST.ordinal());
+	private static final int NORTH_SOUTH = (1 << EnumFacing.NORTH.ordinal()) | (1 << EnumFacing.SOUTH.ordinal());
+	private static final int HORIZONTAL_MASK = EAST_WEST | NORTH_SOUTH;
+
+	private static boolean connectedOr(int set, int mask) {
+		return (set & mask) != 0;
 	}
 
-	private static boolean blockConnectionZ(EnumFacing dir, Map<EnumFacing, EnumSet<EnumFacing>> neighborConnections) {
-		return blockConnection(dir, EnumFacing.Axis.Z, neighborConnections);
-	}
-
-	private static boolean blockConnectionY(EnumFacing dir, Map<EnumFacing, EnumSet<EnumFacing>> neighborConnections) {
+	private static boolean blockConnectionY(EnumFacing dir, int[] neighborConnections) {
 		return blockConnection(dir, EnumFacing.Axis.Y, neighborConnections)
 				|| blockConnection(dir, dir.rotateY().getAxis(), neighborConnections);
 	}
 
-	private static boolean blockConnection(EnumFacing dir, EnumFacing.Axis axis, Map<EnumFacing, EnumSet<EnumFacing>> neighborConnections) {
+	private static boolean blockConnection(EnumFacing dir, EnumFacing.Axis axis, int[] neighborConnections) {
 		EnumFacing rot = dir.rotateAround(axis);
-		EnumSet<EnumFacing> set = neighborConnections.get(dir);
-		return set != null && (set.contains(rot) || set.contains(rot.getOpposite()));
+		int set = neighborConnections[dir.ordinal()];
+		return (set & ((1 << rot.ordinal()) | (1 << rot.getOpposite().ordinal()))) != 0;
 	}
 
-	private static CtmSubmap pillarUvs(EnumSet<EnumFacing> set, EnumFacing face1, EnumFacing face2) {
+	private static CtmSubmap pillarUvs(int set, EnumFacing face1, EnumFacing face2) {
 		CtmSubmap[][] x2 = CtmSubmap.x2Grid();
-		if (set.contains(face1) && set.contains(face2)) {
+		boolean a = (set & (1 << face1.ordinal())) != 0;
+		boolean b = (set & (1 << face2.ordinal())) != 0;
+		if (a && b) {
 			return x2[1][0];
-		} else if (set.contains(face1)) {
+		} else if (a) {
 			return x2[1][1];
 		} else {
 			return x2[0][1];

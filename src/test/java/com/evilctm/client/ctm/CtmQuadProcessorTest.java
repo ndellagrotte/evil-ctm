@@ -2,10 +2,22 @@
 package com.evilctm.client.ctm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
+
+import com.evilctm.api.client.QuadProcessor;
+import com.evilctm.impl.client.ProcessingContextImpl;
+import com.evilctm.testutil.FakeBlockAccess;
+import com.evilctm.testutil.TestQuads;
+import com.google.gson.JsonParser;
+import net.minecraft.block.state.IBlockState;
+import net.minecraft.init.Blocks;
+import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.math.BlockPos;
 
 import com.evilctm.client.ctm.CtmDefinition;
 import com.evilctm.client.ctm.CtmQuadProcessor;
@@ -90,7 +102,7 @@ class CtmQuadProcessorTest {
 	private static CtmQuadProcessor fixedOutput(List<BakedQuad> produce) {
 		return new CtmQuadProcessor(null, new TextureAtlasSprite[0]) {
 			@Override
-			protected void transformQuad(BakedQuad quad, TextureAtlasSprite sprite, net.minecraft.world.IBlockAccess level, net.minecraft.util.math.BlockPos pos, net.minecraft.block.state.IBlockState appearanceState, net.minecraft.block.state.IBlockState state, long rand, List<BakedQuad> out) {
+			protected void transformQuad(BakedQuad quad, TextureAtlasSprite sprite, net.minecraft.world.IBlockAccess level, net.minecraft.util.math.BlockPos pos, net.minecraft.block.state.IBlockState appearanceState, net.minecraft.block.state.IBlockState state, long rand, List<BakedQuad> out, Scratch scratch) {
 				if (produce == null) {
 					out.add(quad);
 				} else {
@@ -131,4 +143,89 @@ class CtmQuadProcessorTest {
 		assertTrue(ctx.getExtraQuads().get(0) == earlier);
 		assertTrue(ctx.getExtraQuads().subList(1, 5).equals(pieces));
 	}
+
+	private static final BlockPos CENTER = new BlockPos(5, 5, 5);
+
+	private static String runPillar(CtmQuadProcessor processor, TextureAtlasSprite base, FakeBlockAccess world, EnumFacing face) {
+		IBlockState state = world.getBlockState(CENTER);
+		ProcessingContextImpl ctx = new ProcessingContextImpl();
+		BakedQuad quad = TestQuads.fullFace(face, base, -1);
+		QuadProcessor.ProcessingResult result = processor.processQuad(quad, base, world, CENTER, state, state, 0, 0, ctx);
+		StringBuilder sb = new StringBuilder(result.name());
+		List<BakedQuad> outputs = ctx.getExtraQuads();
+		for (BakedQuad q : outputs) {
+			for (int i = 0; i < 4; i++) {
+				float[] uv = TestQuads.uvOf(q, i);
+				sb.append(' ').append(uv[0]).append(',').append(uv[1]);
+			}
+			sb.append(';');
+		}
+		return sb.toString();
+	}
+
+	private static CtmQuadProcessor pillarProcessor(TextureAtlasSprite base, TextureAtlasSprite sheet) {
+		CtmDefinition def = CtmMcmetaParser.parse(new ResourceLocation("test:pillar"),
+				JsonParser.parseString("{\"type\":\"pillar\"}").getAsJsonObject(), "test", 0);
+		return new CtmQuadProcessor(def, new TextureAtlasSprite[]{base, sheet});
+	}
+
+	private static FakeBlockAccess pillarWorld(int mask) {
+		FakeBlockAccess world = new FakeBlockAccess();
+		IBlockState stone = Blocks.STONE.getDefaultState();
+		world.set(CENTER, stone);
+		for (EnumFacing f : EnumFacing.VALUES) {
+			if ((mask & (1 << f.ordinal())) != 0) {
+				world.set(CENTER.offset(f), stone);
+			}
+		}
+		return world;
+	}
+
+	@Test
+	void verticalColumnUsesTheMiddlePillarCellOnSides() {
+		TextureAtlasSprite base = new Spr("test:pbase");
+		TextureAtlasSprite sheet = new Spr("test:sheet");
+		CtmQuadProcessor p = pillarProcessor(base, sheet);
+		int both = (1 << EnumFacing.UP.ordinal()) | (1 << EnumFacing.DOWN.ordinal());
+		String north = runPillar(p, base, pillarWorld(both), EnumFacing.NORTH);
+		String lone = runPillar(p, base, pillarWorld(0), EnumFacing.NORTH);
+		assertEquals(north, runPillar(p, base, pillarWorld(both), EnumFacing.NORTH));
+		assertEquals(lone, runPillar(p, base, pillarWorld(0), EnumFacing.NORTH));
+		assertNotEquals(north, lone);
+	}
+
+	@Test
+	void exhaustiveAndRandomWorldsMatchTheGolden() {
+		TextureAtlasSprite base = new Spr("test:base2");
+		TextureAtlasSprite sheet = new Spr("test:sheet2");
+		CtmQuadProcessor p = pillarProcessor(base, sheet);
+		StringBuilder all = new StringBuilder();
+		for (int mask = 0; mask < 64; mask++) {
+			FakeBlockAccess world = pillarWorld(mask);
+			for (EnumFacing face : EnumFacing.VALUES) {
+				all.append(runPillar(p, base, world, face)).append('\n');
+			}
+		}
+		Random rng = new Random(1234);
+		IBlockState stone = Blocks.STONE.getDefaultState();
+		for (int w = 0; w < 200; w++) {
+			FakeBlockAccess world = new FakeBlockAccess();
+			world.set(CENTER, stone);
+			for (int x = -2; x <= 2; x++) {
+				for (int y = -2; y <= 2; y++) {
+					for (int z = -2; z <= 2; z++) {
+						if (rng.nextInt(3) == 0) {
+							world.set(CENTER.add(x, y, z), stone);
+						}
+					}
+				}
+			}
+			for (EnumFacing face : EnumFacing.VALUES) {
+				all.append(runPillar(p, base, world, face)).append('\n');
+			}
+		}
+		assertEquals(GOLDEN_HASH, all.toString().hashCode());
+	}
+
+	private static final int GOLDEN_HASH = -1199926450;
 }
