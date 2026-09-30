@@ -11,6 +11,7 @@ import com.evilctm.testutil.FakeBlockAccess;
 import com.evilctm.testutil.FakeGate;
 import com.evilctm.testutil.PipelineHarness;
 import com.evilctm.testutil.TestQuads;
+import com.evilctm.testutil.McBootstrap;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -23,6 +24,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class MultipassConformanceTest {
+	static {
+		McBootstrap.ensure();
+	}
+
 	private static final IBlockState STONE = Blocks.STONE.getDefaultState();
 	private static final BlockPos POS = new BlockPos(3, 64, -7);
 

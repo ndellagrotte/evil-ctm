@@ -107,7 +107,6 @@ class RandomSpriteProviderTest {
 		int different = 0;
 		for (int x = 0; x < 30; x++) {
 			BlockPos low = new BlockPos(x, 64, 0);
-			FakeBlockAccess world = new FakeBlockAccess().set(low, STONE).set(low.up(), STONE);
 			if (pick(provider, EnumFacing.NORTH, low) != pick(provider, EnumFacing.NORTH, low.up())) {
 				different++;
 			}

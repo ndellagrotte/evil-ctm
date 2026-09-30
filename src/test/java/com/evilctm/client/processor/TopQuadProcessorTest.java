@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import com.evilctm.api.client.QuadProcessor;
 import com.evilctm.impl.client.ProcessingContextImpl;
 import com.evilctm.testutil.FakeBlockAccess;
+import com.evilctm.testutil.McBootstrap;
 import com.evilctm.testutil.TestQuads;
 import com.evilctm.testutil.TestSprites;
 import net.minecraft.block.state.IBlockState;
@@ -19,6 +20,10 @@ import net.minecraft.util.math.BlockPos;
 import org.junit.jupiter.api.Test;
 
 class TopQuadProcessorTest {
+	static {
+		McBootstrap.ensure();
+	}
+
 	private static final BlockPos POS = new BlockPos(4, 64, 4);
 	private final IBlockState stone = Blocks.STONE.getDefaultState();
 	private final TextureAtlasSprite top = TestSprites.create("test:top_tile");

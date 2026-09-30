@@ -3,6 +3,7 @@ package com.evilctm.client.processor.simple;
 
 import static com.evilctm.client.processor.simple.SpriteProviderTestSupport.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.evilctm.client.processor.OrientationMode;
 import com.evilctm.client.processor.Symmetry;
@@ -79,8 +80,21 @@ class RepeatSpriteProviderTest {
 	}
 
 	@Test
-	void oppositeSymmetryMirrorsPositiveFaces() {
-		RepeatSpriteProvider provider = new RepeatSpriteProvider(sprites, WIDTH, HEIGHT, Symmetry.OPPOSITE, OrientationMode.NONE);
-		assertEquals(pick(provider, EnumFacing.NORTH, 4, 65, 2), pick(provider, EnumFacing.SOUTH, 4, 65, 2));
+	void oppositeSymmetryMapsEveryFaceToItsPositiveTwin() {
+		RepeatSpriteProvider none = provider();
+		RepeatSpriteProvider opposite = new RepeatSpriteProvider(sprites, WIDTH, HEIGHT, Symmetry.OPPOSITE, OrientationMode.NONE);
+		boolean differsWithoutSymmetry = false;
+		for (EnumFacing face : EnumFacing.values()) {
+			EnumFacing twin = Symmetry.OPPOSITE.apply(face);
+			for (int x = -4; x <= 4; x++) {
+				for (int y = 60; y <= 63; y++) {
+					for (int z = -4; z <= 4; z++) {
+						assertEquals(pick(none, twin, x, y, z), pick(opposite, face, x, y, z), face + " " + x + "," + y + "," + z);
+						differsWithoutSymmetry |= pick(none, face, x, y, z) != pick(none, twin, x, y, z);
+					}
+				}
+			}
+		}
+		assertTrue(differsWithoutSymmetry, "control: opposite faces differ when symmetry is none");
 	}
 }

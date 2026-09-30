@@ -3,6 +3,7 @@ package com.evilctm.client.processor.simple;
 
 import com.evilctm.client.processor.ConnectionPredicate;
 import com.evilctm.impl.client.ProcessingContextImpl;
+import com.evilctm.testutil.McBootstrap;
 import com.evilctm.testutil.TestQuads;
 import com.evilctm.testutil.TestSprites;
 import net.minecraft.block.Block;
@@ -15,6 +16,10 @@ import net.minecraft.util.math.BlockPos;
 
 /** Shared helpers for the sprite provider conformance tests. */
 final class SpriteProviderTestSupport {
+	static {
+		McBootstrap.ensure();
+	}
+
 	static final IBlockState STONE = Blocks.STONE.getDefaultState();
 
 	private SpriteProviderTestSupport() {
