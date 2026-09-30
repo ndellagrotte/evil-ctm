@@ -19,7 +19,9 @@ import com.evilctm.client.layer.EmissiveLayerSource;
 import com.evilctm.client.layer.LayerRouter;
 import com.evilctm.client.layer.ModelProbe;
 import com.evilctm.client.model.EmissiveBakedQuad;
+import com.evilctm.client.config.EvilCtmConfig;
 import com.evilctm.impl.client.EmissiveSpriteApiImpl;
+import com.evilctm.impl.client.ProcessingContextImpl;
 import com.evilctm.testutil.FakeBlockAccess;
 import com.evilctm.testutil.FakeGate;
 import com.evilctm.testutil.PipelineHarness;
@@ -114,19 +116,102 @@ class EmissivePassTest {
 		return harness.run(state, POS, access, layer, EnumFacing.NORTH, List.of(baseQuad));
 	}
 
-	@Test
-	void solidBlockEmitsNothingEmissiveInSolid() {
-		List<BakedQuad> out = run(stone, BlockRenderLayer.SOLID);
-		assertEquals(1, out.size());
-		assertSame(baseQuad, out.get(0));
+	private static final int SOLID_MASK = LayerRouter.bit(BlockRenderLayer.SOLID);
+
+	private List<BakedQuad> pass(@Nullable List<BakedQuad> out, List<BakedQuad> original, @Nullable List<BakedQuad> baseOutputs, BlockRenderLayer layer, boolean nativeLayer, int mask, boolean defer, ProcessingContextImpl ctx) {
+		return EmissivePass.apply(out, original, baseOutputs, layer, nativeLayer, mask, defer, ctx);
 	}
 
 	@Test
-	void solidBlockEmitsOnlyTheEmissiveQuadInCutoutMipped() {
+	void solidNativeEmitsCompanionInSolidWhenExtraLayerIsNotGranted() {
+		ProcessingContextImpl ctx = new ProcessingContextImpl().begin(null, BlockRenderLayer.SOLID);
+		List<BakedQuad> out = pass(null, List.of(baseQuad), null, BlockRenderLayer.SOLID, true, SOLID_MASK, false, ctx);
+		assertEquals(2, out.size());
+		assertSame(glow, out.get(1).getSprite());
+	}
+
+	@Test
+	void solidNativeEmitsNothingInSolidWhenExtraLayerIsGranted() {
+		ProcessingContextImpl ctx = new ProcessingContextImpl().begin(null, BlockRenderLayer.SOLID);
+		assertEquals(null, pass(null, List.of(baseQuad), null, BlockRenderLayer.SOLID, true, SOLID_MASK, true, ctx));
+	}
+
+	@Test
+	void sevenArgFormDefersSolidOnlyWhenConfigAllowsExtraLayers() {
+		EvilCtmConfig cfg = EvilCtmConfig.INSTANCE;
+		boolean prev = cfg.extraLayers.get();
+		try {
+			ProcessingContextImpl ctx = new ProcessingContextImpl().begin(null, BlockRenderLayer.SOLID);
+			cfg.extraLayers.set(false);
+			List<BakedQuad> out = EmissivePass.apply(null, List.of(baseQuad), null, BlockRenderLayer.SOLID, true, SOLID_MASK, ctx);
+			assertEquals(2, out.size());
+			cfg.extraLayers.set(true);
+			assertEquals(null, EmissivePass.apply(null, List.of(baseQuad), null, BlockRenderLayer.SOLID, true, SOLID_MASK, ctx));
+		} finally {
+			cfg.extraLayers.set(prev);
+		}
+	}
+
+	@Test
+	void pipelineEmitsSolidCompanionInSolidPass() {
+		List<BakedQuad> out = run(stone, BlockRenderLayer.SOLID);
+		assertEquals(2, out.size());
+		assertSame(baseQuad, out.get(0));
+		assertSame(glow, out.get(1).getSprite());
+	}
+
+	@Test
+	void extraMaskRequestsCutoutMippedForSolidBlockWithPair() {
 		assertEquals(LayerRouter.bit(BlockRenderLayer.CUTOUT_MIPPED), LayerRouter.extraMask(stone));
-		List<BakedQuad> out = run(stone, BlockRenderLayer.CUTOUT_MIPPED);
+	}
+
+	@Test
+	void extraMaskForCtmTileOnlyPairNeedsTheFlag() {
+		assertTrue(harness.addRule("minecraft:optifine/ctm/ore/ore.properties", "method=random\nmatchBlocks=stone\ntiles=test:ore_a test:ore_b\n"));
+		harness.publish();
+		TextureAtlasSprite tile = TestSprites.create("minecraft:evilctm_reserved/ctm/tile");
+		TextureAtlasSprite tileGlow = TestSprites.create("test:tile_e");
+		EmissiveSpriteApiImpl.INSTANCE.publish(Map.of(tile, tileGlow));
+		LayerRouter.refreshActive();
+		assertTrue(EmissiveSpriteApiImpl.hasCtmTilePairs());
+		assertEquals(LayerRouter.bit(BlockRenderLayer.CUTOUT_MIPPED), EmissiveLayerSource.INSTANCE.extraLayerMask(stone, SOLID_MASK));
+		EmissiveSpriteApiImpl.INSTANCE.publish(Map.of(TestSprites.create("test:other"), tileGlow));
+		LayerRouter.refreshActive();
+		assertFalse(EmissiveSpriteApiImpl.hasCtmTilePairs());
+		assertEquals(0, EmissiveLayerSource.INSTANCE.extraLayerMask(stone, SOLID_MASK));
+	}
+
+	@Test
+	void nonNativeCutoutMippedPassEmitsCompanionsOfBaseOutputsForSolidBlock() {
+		TextureAtlasSprite tile = TestSprites.create("minecraft:evilctm_reserved/ctm/t2");
+		TextureAtlasSprite tileGlow = TestSprites.create("test:t2_e");
+		EmissiveSpriteApiImpl.INSTANCE.publish(Map.of(tile, tileGlow));
+		BakedQuad tileQuad = TestQuads.fullFace(EnumFacing.NORTH, tile, 3);
+		ProcessingContextImpl ctx = new ProcessingContextImpl().begin(null, BlockRenderLayer.CUTOUT_MIPPED);
+		List<BakedQuad> out = pass(null, List.of(baseQuad), List.of(tileQuad), BlockRenderLayer.CUTOUT_MIPPED, false, SOLID_MASK, true, ctx);
 		assertEquals(1, out.size());
-		assertSame(glow, out.get(0).getSprite());
+		assertSame(tileGlow, out.get(0).getSprite());
+	}
+
+	@Test
+	void nonNativeCutoutMippedPassOnCutoutNativeBlockAddsNoBaseCompanions() {
+		int cutoutMask = LayerRouter.bit(BlockRenderLayer.CUTOUT);
+		ProcessingContextImpl ctx = new ProcessingContextImpl().begin(null, BlockRenderLayer.CUTOUT_MIPPED);
+		assertEquals(null, pass(null, List.of(baseQuad), List.of(baseQuad), BlockRenderLayer.CUTOUT_MIPPED, false, cutoutMask, true, ctx));
+		// base quads kept in the pass (out) are not re-emitted either
+		assertEquals(null, pass(null, List.of(baseQuad), null, BlockRenderLayer.CUTOUT_MIPPED, false, cutoutMask, true, ctx));
+		List<BakedQuad> kept = new java.util.ArrayList<>(List.of(baseQuad));
+		assertSame(kept, pass(kept, List.of(baseQuad), null, BlockRenderLayer.CUTOUT_MIPPED, false, cutoutMask, true, ctx));
+		assertEquals(1, kept.size());
+	}
+
+	@Test
+	void overlayGetsCompanionInItsOwnLayer() {
+		ProcessingContextImpl ctx = new ProcessingContextImpl().begin(null, BlockRenderLayer.CUTOUT_MIPPED);
+		ctx.emitOverlay(BlockRenderLayer.CUTOUT_MIPPED, baseQuad);
+		List<BakedQuad> out = pass(new java.util.ArrayList<>(List.of(baseQuad)), List.of(baseQuad), null, BlockRenderLayer.CUTOUT_MIPPED, false, SOLID_MASK, true, ctx);
+		assertEquals(2, out.size());
+		assertSame(glow, out.get(1).getSprite());
 	}
 
 	@Test
@@ -173,8 +258,13 @@ class EmissivePassTest {
 		AtomicReference<String> failure = new AtomicReference<>();
 		Thread reader = new Thread(() -> {
 			while (!stop.get()) {
-				Map<TextureAtlasSprite, TextureAtlasSprite> view = EmissiveSpriteApiImpl.INSTANCE.snapshot();
+				EmissiveSpriteApiImpl.View v = EmissiveSpriteApiImpl.INSTANCE.view();
+				Map<TextureAtlasSprite, TextureAtlasSprite> view = v.pairs();
 				int size = view.size();
+				if (v.ctmTilePairs() != (size != 0)) {
+					failure.set("flag/map mismatch: " + size + " " + v.ctmTilePairs());
+					return;
+				}
 				boolean full = view.containsKey(tile);
 				for (TextureAtlasSprite k : keys) {
 					full &= view.containsKey(k);

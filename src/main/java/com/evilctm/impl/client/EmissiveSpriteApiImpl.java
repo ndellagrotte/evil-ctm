@@ -48,6 +48,16 @@ public final class EmissiveSpriteApiImpl implements EmissiveSpriteApi {
 		return java.util.Collections.unmodifiableMap(published.map);
 	}
 
+	/** One complete publish: the pairs and the flag derived from them. */
+	public record View(Map<TextureAtlasSprite, TextureAtlasSprite> pairs, boolean ctmTilePairs) {
+	}
+
+	/** The pairs and the CTM-tile flag of one publish, read together. */
+	public View view() {
+		Published p = published;
+		return new View(java.util.Collections.unmodifiableMap(p.map), p.ctmTilePairs);
+	}
+
 	public static boolean hasAny() {
 		return !INSTANCE.published.map.isEmpty();
 	}
