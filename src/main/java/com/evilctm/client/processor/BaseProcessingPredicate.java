@@ -10,7 +10,7 @@ import javax.annotation.Nullable;
 
 import com.evilctm.api.client.ProcessingDataProvider;
 import com.evilctm.client.properties.BaseCtmProperties;
-import net.minecraft.block.properties.IProperty;
+import com.evilctm.client.util.AxisUtil;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -50,22 +50,11 @@ public class BaseProcessingPredicate implements ProcessingPredicate {
 				return false;
 			}
 
-			IProperty<?> axisProperty = null;
-			for (IProperty<?> property : appearanceState.getProperties().keySet()) {
-				if (property.getName().equals("axis")) {
-					axisProperty = property;
-					break;
-				}
-			}
-			if (axisProperty != null) {
-				Object axisValue = appearanceState.getValue(axisProperty);
-				if (axisValue instanceof EnumFacing.Axis axis) {
-					if (axis == EnumFacing.Axis.X) {
-						face = face.rotateAround(EnumFacing.Axis.Z);
-					} else if (axis == EnumFacing.Axis.Z) {
-						face = face.rotateAround(EnumFacing.Axis.X);
-					}
-				}
+			EnumFacing.Axis axis = AxisUtil.getAxis(appearanceState);
+			if (axis == EnumFacing.Axis.X) {
+				face = toCanonicalFace(face, EnumFacing.EAST, EnumFacing.WEST);
+			} else if (axis == EnumFacing.Axis.Z) {
+				face = toCanonicalFace(face, EnumFacing.SOUTH, EnumFacing.NORTH);
 			}
 
 			if (!faces.contains(face)) {
@@ -93,6 +82,21 @@ public class BaseProcessingPredicate implements ProcessingPredicate {
 		}
 
 		return true;
+	}
+
+	/** Maps a face of a block lying on its side onto the face of an upright block that shows the same part of the texture; both end caps count as the top. */
+	private static EnumFacing toCanonicalFace(EnumFacing face, EnumFacing positiveEnd, EnumFacing negativeEnd) {
+		if (face == positiveEnd) {
+			return EnumFacing.UP;
+		}
+		if (face == negativeEnd) {
+			return EnumFacing.UP;
+		}
+		return switch (face) {
+			case UP -> negativeEnd;
+			case DOWN -> positiveEnd;
+			default -> face;
+		};
 	}
 
 	public static BaseProcessingPredicate fromProperties(BaseCtmProperties properties) {
