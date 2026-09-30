@@ -9,6 +9,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.function.IntPredicate;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.annotation.Nullable;
@@ -22,9 +23,8 @@ import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import com.evilctm.api.client.CtmProperties;
 import com.evilctm.client.EvilCtmClient;
 import com.evilctm.client.resource.ResourceRedirectHandler;
-import com.evilctm.client.util.MathUtil;
+import com.evilctm.client.util.IntRangeParser;
 import com.evilctm.client.util.biome.BiomeResolver;
-import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureMap;
@@ -63,6 +63,14 @@ public class BaseCtmProperties implements CtmProperties {
 	@Nullable
 	protected Predicate<String> blockEntityNamePredicate;
 
+	private static final Pattern BLOCK_ID_NAME = Pattern.compile("^block(\\d+)");
+
+	/** {@link #matchBlocksPredicate} AND the {@code metadata=} filter. */
+	@Nullable
+	protected Predicate<IBlockState> blockStateFilter;
+	protected int weight = 0;
+	protected int renderPass = -1;
+
 	protected boolean prioritized = false;
 	/** Set by the loader for the rules shipped in this mod's own assets. */
 	protected boolean builtin = false;
@@ -83,16 +91,21 @@ public class BaseCtmProperties implements CtmProperties {
 		return spriteDependencies;
 	}
 
+	/** Greater means applied first (the loader sorts in reverse order). */
 	@Override
 	public int compareTo(@Nullable CtmProperties o) {
 		if (o instanceof BaseCtmProperties o1) {
-			if (prioritized && !o1.prioritized) {
-				return 1;
+			if (builtin != o1.builtin) {
+				return builtin ? -1 : 1;
 			}
-			if (!prioritized && o1.prioritized) {
-				return -1;
+			if (prioritized != o1.prioritized) {
+				return prioritized ? 1 : -1;
 			}
-			int c = MathUtil.signum(packPriority - o1.packPriority);
+			int c = Integer.compare(packPriority, o1.packPriority);
+			if (c != 0) {
+				return c;
+			}
+			c = Integer.compare(weight, o1.weight);
 			if (c != 0) {
 				return c;
 			}
@@ -105,6 +118,7 @@ public class BaseCtmProperties implements CtmProperties {
 		parseMatchTiles();
 		parseMatchBlocks();
 		detectMatches();
+		parseMetadata();
 		validateMatches();
 		parseTiles();
 		parseFaces();
@@ -114,6 +128,8 @@ public class BaseCtmProperties implements CtmProperties {
 		parseName();
 		parsePrioritize();
 		parseResourceCondition();
+		parseWeight();
+		parseRenderPass();
 	}
 
 	protected void parseMatchTiles() {
@@ -132,12 +148,100 @@ public class BaseCtmProperties implements CtmProperties {
 
 	protected void detectMatches() {
 		String baseName = FilenameUtils.getBaseName(resourceId.getPath());
-		if (matchBlocksPredicate == null && baseName.startsWith("block_")) {
-			ResourceLocation id = new ResourceLocation(baseName.substring(6));
-			if (Block.REGISTRY.containsKey(id)) {
-				Block block = Block.REGISTRY.getObject(id);
-				matchBlocksPredicate = state -> state.getBlock() == block;
+		if (matchBlocksPredicate == null) {
+			Matcher idMatcher = BLOCK_ID_NAME.matcher(baseName);
+			String spec = null;
+			if (idMatcher.find()) {
+				spec = idMatcher.group(1);
+			} else if (baseName.startsWith("block_") && baseName.length() > 6) {
+				spec = baseName.substring(6);
 			}
+			if (spec != null) {
+				Predicate<IBlockState> inferred = PropertiesParsingHelper.parseBlockSpec(spec, "file name", resourceId, packId);
+				if (inferred != PropertiesParsingHelper.EMPTY_BLOCK_STATE_PREDICATE) {
+					matchBlocksPredicate = inferred;
+				}
+			}
+		}
+		if (matchBlocksPredicate == null && matchTilesSet == null) {
+			ResourceLocation tile = inferTile(baseName);
+			if (tile != null) {
+				matchTilesSet = Collections.singleton(tile);
+			}
+		}
+	}
+
+	@Nullable
+	private ResourceLocation inferTile(String baseName) {
+		if (baseName.isEmpty()) {
+			return null;
+		}
+		if (resourceManager == null) {
+			return new ResourceLocation("minecraft", "blocks/" + baseName);
+		}
+		String[] namespaces = resourceId.getNamespace().equals("minecraft") ? new String[] { "minecraft" } : new String[] { "minecraft", resourceId.getNamespace() };
+		for (String prefix : new String[] { "", "blocks/" }) {
+			for (String namespace : namespaces) {
+				if (textureExists(new ResourceLocation(namespace, "textures/" + prefix + baseName + ".png"))) {
+					return new ResourceLocation(namespace, prefix + baseName);
+				}
+			}
+		}
+		return null;
+	}
+
+	private boolean textureExists(ResourceLocation location) {
+		try (IResource ignored = resourceManager.getResource(location)) {
+			return true;
+		} catch (Exception e) {
+			return false;
+		}
+	}
+
+	protected void parseMetadata() {
+		String metadataStr = properties.getProperty("metadata");
+		IntPredicate metaPredicate = null;
+		if (metadataStr != null) {
+			metaPredicate = IntRangeParser.parse(metadataStr);
+			if (metaPredicate == null) {
+				EvilCtmClient.LOGGER.warn("Invalid 'metadata' value '" + metadataStr + "' in file '" + resourceId + "' in pack '" + packId + "'");
+				valid = false;
+			}
+		}
+		if (metaPredicate == null) {
+			blockStateFilter = matchBlocksPredicate;
+			return;
+		}
+		IntPredicate meta = metaPredicate;
+		Predicate<IBlockState> metaFilter = state -> meta.test(PropertiesParsingHelper.metaOf(state));
+		blockStateFilter = matchBlocksPredicate == null ? metaFilter : state -> matchBlocksPredicate.test(state) && metaFilter.test(state);
+	}
+
+	protected void parseWeight() {
+		String weightStr = properties.getProperty("weight");
+		if (weightStr == null) {
+			return;
+		}
+		try {
+			weight = Integer.parseInt(weightStr.trim());
+		} catch (NumberFormatException e) {
+			EvilCtmClient.LOGGER.warn("Invalid 'weight' value '" + weightStr + "' in file '" + resourceId + "' in pack '" + packId + "'");
+		}
+	}
+
+	protected void parseRenderPass() {
+		String passStr = properties.getProperty("renderPass");
+		if (passStr == null) {
+			return;
+		}
+		try {
+			renderPass = Integer.parseInt(passStr.trim());
+		} catch (NumberFormatException e) {
+			return;
+		}
+		if (renderPass > 0) {
+			EvilCtmClient.LOGGER.warn("Render pass not supported: " + renderPass + " in file '" + resourceId + "' in pack '" + packId + "'");
+			valid = false;
 		}
 	}
 
@@ -606,6 +710,15 @@ public class BaseCtmProperties implements CtmProperties {
 	@Nullable
 	public Predicate<IBlockState> getMatchBlocksPredicate() {
 		return matchBlocksPredicate;
+	}
+
+	@Nullable
+	public Predicate<IBlockState> getBlockStateFilter() {
+		return blockStateFilter;
+	}
+
+	public int getWeight() {
+		return weight;
 	}
 
 	public List<ResourceLocation> getSpriteIds() {
