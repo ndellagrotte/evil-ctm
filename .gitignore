@@ -25,3 +25,6 @@ gradle-app.setting
 # IDEA config
 .idea
 
+
+# Test/dev run logs
+logs/

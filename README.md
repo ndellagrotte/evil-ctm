@@ -1,81 +1,52 @@
-# CleanroomModTemplate
-Mod development template for Cleanroom, uses a custom [Unimined fork](https://github.com/kappa-maintainer/Unimined) ([original](https://github.com/unimined/Unimined))
+# Evil CTM
 
-### WARNING: Custom Unimined Fork
-May have issues, report here or [here](https://github.com/kappa-maintainer/Unimined) when you encountered impossible field names or impossible Scala compiler errors. 
+OptiFine/MCPatcher connected textures (`optifine/ctm` and `mcpatcher/ctm` `.properties` rules), emissive (`_e`)
+textures and CTM-mod `.png.mcmeta` metadata for **Cleanroom 1.12.2**, rendered through **Demonica's S20 block quad
+transformer**. A port of [CleanContinuity](https://github.com/Q-Engineering-Source/CleanContinuity) onto Demonica.
 
-## DOs and DON'Ts
-### Choose Branch
-Choose mixin branch if you want to use Mixin.
+## Requirements
 
-Use scala and kotlin branch if you want to use those languages. 
+- Cleanroom 1.12.2 with **Demonica** (built against 0.6.0) and the Celeritas build Demonica pins
+  (`org.embeddedt:celeritas-forge-mc12.2:2.5.0-autobuild.9b661b70`).
+- Demonica's **fast block renderer** switched on: *Video Settings → Use Fast Block Renderer*, or
+  `"performance": { "use_fast_block_renderer": true }` in `config/demonica-options.json`. It is off by default.
+  Evil CTM only renders on that path; when it is off (or Demonica rejects the Celeritas jar) Evil CTM logs a warning
+  and prints one in chat.
+- Client only. Servers do not need it.
 
-There are 4 branches available:
-- main
-- mixin
-- scala
-- kotlin
+Blocks Demonica sends to the vanilla renderer (non-`MODEL` render types, Snow Real Magic layers, ArchitectureCraft,
+blocks next to Component Model Hider hidden blocks), pistons, falling blocks, items and TESRs never get CTM.
 
-If you want to use non-main branches, after clicked *Create a new repository* under *Use this template*, check the *Include all branches* checkbox.
+## Supported methods
 
-### Running Client or Server
-If you are using IntelliJ, **DO NOT** use the `Minecraft Client` configure with a blue icon. Just use the `2. Run Client` Gradle task.
+`ctm`/`glass`, `horizontal`/`bookshelf`, `vertical`, `top`, `random`, `repeat` and `fixed`, plus multipass rule chains
+(for example `random` then `repeat`), CTM-mod metadata, and emissive textures (`optifine/emissive.properties`).
+More methods (`ctm_compact`, `horizontal+vertical`, the `overlay` family) are being added.
 
-### Adding Mod Dependencies
-You can find dependencies block in `gradle/scripts/dependencies.gradle`.
+Built-in default rules for glass, glass panes, bookshelves and sandstone ship inside the mod and only apply while the
+vanilla textures are in use. They can be switched off with `builtin_default_rules` in `config/evilctm.json`.
 
-No more `rfg.deobf()` or `fg.deobf`. You **MUST** add mods by using `modImplementation` or `modRuntimeOnly`, or the game will crash when running.
+## Configuration
 
-Use `modLibrary` for libs/mods that you don't want to remap.
+`config/evilctm.json` (also editable from the mod list): `connected_textures`, `emissive_textures`,
+`ctm_mod_textures`, `builtin_default_rules`, `extra_layers`, `render_path_warnings`.
 
-### Non-Mod Dependencies
-Two new configuration types `contain` and `shadow` are available, check more details in `dependencies.gradle`.
+## Building
 
-### gradle.properties
-Edit gradle.properties and set your modid, mod version, mod name, package, etc.
+```
+./gradlew --offline build -Pdemonica_jar=/absolute/path/to/Demonica-0.6.0-SNAPSHOT.jar
+```
 
-If you are writing a coremod, remember to set related settings to true.
+`demonica_jar` defaults to `../Demonica/build/libs/Demonica-0.6.0-SNAPSHOT.jar`. The jar is put on the compile
+classpath unremapped (`demonica_unremapped=true` in `gradle.properties`; see the comment there). If the Celeritas or
+fluidlogged-api coordinates do not resolve offline, pass `-Pceleritas_jar=<jar>` / `-Pfluidlogged_jar=<jar>`.
 
-### Reference Class
-There will be a `Reference` class under your top package.
+## Testing in game
 
-This is used to store mod version so you can fill it to `@Mod` annotation.
+`runClient` does not work: FML requires Demonica, which is not a runtime dependency of this project. Copy
+`build/libs/evilctm-0.1.0.jar`, the Demonica jar and the pinned Celeritas jar into a real Cleanroom instance's `mods/`
+folder, switch on the fast block renderer, and load a CTM resource pack.
 
-You should change its location to fit your new package name.
+## License
 
-You can find its template under `src/main/java-templates`.
-
-### Mixin
-1. Rename json config file to use your modid. 
-2. Add **all** your mixin classes there.
-3. Use `IMixinConfigPlugin` to control if certain mixin should be enabled.
-4. mixin classes will be passed to the plugin only when target class is loading, so you don't need to call `Loader.isModLoaded()`
-5. Don't worry about refmap, Unimined will handle it automatically. You can still `disableRefmap()` manually though
-
-### Access Transformer
-You **MUST** write AT file in MCP name. It will be remapped back to SRG name in artifact jar.
-
-Rename AT file name to your modid before using it. There's an example entry in AT file, remove it if you want to use AT.
-
-### Vanilla Source Code with Comments
-Run `genSources` task in gradle. If it didn't work, run again until a file with `-sources.jar` suffix appeared.
-
-If you want to `find usage` from vanilla like RFG, just change the scope in IntelliJ settings.
-
-### GitHub Action
-This template comes with three workflows.
-
-`build.yml` will build and upload artifact for every commit. Useful when you want to provide test builds for debugging.
-
-`release.yml` will make a GitHub release if you pushed a git tag.
-
-`release-to-cf-mr.yml` can publish your mod to CurseForge and/or Modrinth.
-
-You need to fill in your project IDs and configure your tokens in GitHub repository first.
-
-By default, you will need to manually trigger the workflow in web page, but you can also enable tag triggering by merging the third yml into `release.yml`.
-
-### Credit
-Thanks @Karnatour for fixing shadow plugin
-
-Thanks @ghostflyby for making kotlin branch
+LGPL-3.0-only. See `LICENSE`, `COPYING` and `NOTICE.md` for the full notices and credits.

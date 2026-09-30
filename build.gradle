@@ -16,7 +16,7 @@ ext {
 }
 
 version = mod_version
-group = root_package
+group = "${root_package}.${mod_id}"
 
 base {
     archivesName = mod_id
@@ -43,6 +43,8 @@ configurations {
     runtimeOnly.extendsFrom(modRuntimeOnly)
 }
 
+apply from: 'gradle/scripts/repositories.gradle'
+
 def remapTaskName = enable_shadow.toBoolean() ? "remapShadowJar" : "remapJar"
 
 //noinspection GroovyAssignabilityCheck
@@ -59,6 +61,7 @@ unimined.minecraft {
         }
         loader "0.6.13-alpha"
         runs.all {
+            systemProperty("crl.dev.mixin", "${mod_id}.default.mixin.json")
             args += ['--username', minecraft_username]
             def extraArgs = extra_jvm_args
             if (extraArgs != null && !extraArgs.trim().isEmpty()) {
@@ -79,11 +82,22 @@ unimined.minecraft {
 
     String jarTaskName = enable_shadow.toBoolean() ? "shadowJar" : "jar"
 
-    remap(tasks.named(jarTaskName).get())
+    remap(tasks.named(jarTaskName).get()) {
+        mixinRemap {
+            enableBaseMixin()
+            enableMixinExtra()
+        }
+    }
 
     mods {
-        remap(configurations.modCompileOnly)
-        remap(configurations.modRuntimeOnly)
+        // As in Demonica/build.gradle: the Celeritas jar ships a 'named' access widener that Unimined rejects otherwise.
+        remap([configurations.modCompileOnly, configurations.modRuntimeOnly]) {
+            catchAWNamespaceAssertion()
+            mixinRemap {
+                enableBaseMixin()
+                enableMixinExtra()
+            }
+        }
     }
 }
 
@@ -128,6 +142,11 @@ sourceSets {
     }
 }
 
+// Compile-only jars (Demonica, Celeritas, fluidlogged-api) are visible when tests compile but absent at test
+// runtime: tests must never load DemonicaBridge, CtmQuadTransformer or EvilCtmClient.preInit.
+sourceSets.test.compileClasspath += sourceSets.main.compileClasspath
+sourceSets.test.runtimeClasspath += sourceSets.main.runtimeClasspath
+
 idea {
     module {
         inheritOutputDirs = true
@@ -171,6 +190,9 @@ compileJava {
 jar {
     archiveClassifier = 'dev'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(rootProject.files('LICENSE', 'COPYING', 'NOTICE.md')) {
+        into "META-INF/licenses/${mod_id}"
+    }
     if (configurations.contain.size() > 0) {
         into('/') {
             from configurations.contain
@@ -180,6 +202,7 @@ jar {
         manifest {
             def attribute_map = [:]
             attribute_map['ModType'] = "CRL"
+            attribute_map['MixinConfigs'] = "${mod_id}.default.mixin.json"
             if (configurations.contain.size() > 0) {
                 attribute_map['ContainedDeps'] = configurations.contain.collect { it.name }.join(' ')
                 attribute_map['NonModDeps'] = true

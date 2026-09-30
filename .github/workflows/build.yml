@@ -1,3 +1,4 @@
+# Disabled (if: false): building needs a local Demonica jar; see README.
 name: Build mod jar
 
 on:
@@ -8,6 +9,8 @@ permissions:
 
 jobs:
   build:
+    # Disabled: the build needs the Demonica jar (-Pdemonica_jar), which CI does not have.
+    if: false
 
     runs-on: ubuntu-latest
 

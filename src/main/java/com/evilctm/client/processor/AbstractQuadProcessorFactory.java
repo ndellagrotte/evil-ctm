@@ -1,0 +1,60 @@
+/* Evil CTM. SPDX-License-Identifier: LGPL-3.0-only. Derived from CleanContinuity / NeoContinuity / Continuity (LGPL-3.0); see NOTICE.md. */
+package com.evilctm.client.processor;
+
+import java.util.List;
+import java.util.function.Function;
+
+import com.evilctm.api.client.QuadProcessor;
+import com.evilctm.client.EvilCtmClient;
+import com.evilctm.client.properties.BaseCtmProperties;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.renderer.texture.TextureMap;
+import net.minecraft.util.ResourceLocation;
+
+public abstract class AbstractQuadProcessorFactory<T extends BaseCtmProperties> implements QuadProcessor.Factory<T> {
+	@Override
+	public QuadProcessor createProcessor(T properties, Function<ResourceLocation, TextureAtlasSprite> spriteGetter) {
+		int spriteAmount = getSpriteAmount(properties);
+		List<ResourceLocation> spriteIds = properties.getSpriteIds();
+		int provided = spriteIds.size();
+		int max = provided;
+
+		if (provided > spriteAmount) {
+			EvilCtmClient.LOGGER.warn("Method '" + properties.getMethod() + "' requires " + spriteAmount + " tiles but " + provided + " were provided in file '" + properties.getResourceId() + "' in pack '" + properties.getPackId() + "'");
+			max = spriteAmount;
+		}
+
+		TextureAtlasSprite[] sprites = new TextureAtlasSprite[spriteAmount];
+		TextureAtlasSprite missingSprite = spriteGetter.apply(TextureMap.LOCATION_MISSING_TEXTURE);
+		boolean supportsNullSprites = supportsNullSprites(properties);
+		for (int i = 0; i < max; i++) {
+			TextureAtlasSprite sprite;
+			ResourceLocation spriteId = spriteIds.get(i);
+			if (spriteId.equals(BaseCtmProperties.SPECIAL_SKIP_ID)) {
+				sprite = missingSprite;
+			} else if (spriteId.equals(BaseCtmProperties.SPECIAL_DEFAULT_ID)) {
+				sprite = supportsNullSprites ? null : missingSprite;
+			} else {
+				sprite = spriteGetter.apply(spriteId);
+			}
+			sprites[i] = sprite;
+		}
+
+		if (provided < spriteAmount) {
+			EvilCtmClient.LOGGER.error("Method '" + properties.getMethod() + "' requires " + spriteAmount + " tiles but only " + provided + " were provided in file '" + properties.getResourceId() + "' in pack '" + properties.getPackId() + "'");
+			for (int i = provided; i < spriteAmount; i++) {
+				sprites[i] = missingSprite;
+			}
+		}
+
+		return createProcessor(properties, sprites);
+	}
+
+	public abstract QuadProcessor createProcessor(T properties, TextureAtlasSprite[] sprites);
+
+	public abstract int getSpriteAmount(T properties);
+
+	public boolean supportsNullSprites(T properties) {
+		return true;
+	}
+}

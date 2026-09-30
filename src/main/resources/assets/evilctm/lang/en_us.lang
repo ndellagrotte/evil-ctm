@@ -1,0 +1,14 @@
+options.evilctm.title=Evil CTM
+options.evilctm.connected_textures=Connected Textures
+options.evilctm.emissive_textures=Emissive Textures
+options.evilctm.ctm_mod_textures=CTM Mod Textures
+options.evilctm.builtin_default_rules=Built-in Default Rules
+options.evilctm.extra_layers=Extra Render Layers
+options.evilctm.render_path_warnings=Render Path Warnings
+
+evilctm.warning.api_missing=Evil CTM: Demonica's block quad transformer API (S20) is missing, so connected textures cannot render.
+evilctm.warning.celeritas_rejected=Evil CTM: Demonica rejected the installed Celeritas build, so its block quad hook is off and connected textures cannot render.
+evilctm.warning.fast_renderer_off=Evil CTM: Demonica's fast block renderer is off, so connected textures cannot render.
+evilctm.warning.bridge_broken=Evil CTM: this Demonica version is not fully supported; extra render layers and shader layer overrides are disabled.
+evilctm.warning.not_invoked=Evil CTM: Demonica never passed any block quads to Evil CTM; connected textures are not rendering.
+evilctm.warning.hint=Video Settings → Use Fast Block Renderer (or set performance.use_fast_block_renderer: true in config/demonica-options.json)

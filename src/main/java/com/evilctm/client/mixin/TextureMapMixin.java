@@ -1,0 +1,27 @@
+/* Evil CTM. SPDX-License-Identifier: LGPL-3.0-only. Derived from CleanContinuity / NeoContinuity / Continuity (LGPL-3.0); see NOTICE.md. */
+package com.evilctm.client.mixin;
+
+import com.evilctm.client.resource.EmissiveSuffixLoader;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.renderer.texture.TextureMap;
+import net.minecraft.util.ResourceLocation;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+@Mixin(TextureMap.class)
+public abstract class TextureMapMixin {
+	@Inject(method = "registerSprite(Lnet/minecraft/util/ResourceLocation;)Lnet/minecraft/client/renderer/texture/TextureAtlasSprite;", at = @At("RETURN"))
+	private void evilctm$registerEmissive(ResourceLocation location, CallbackInfoReturnable<TextureAtlasSprite> cir) {
+		String suffix = EmissiveSuffixLoader.getEmissiveSuffix();
+		if (suffix == null || suffix.isEmpty() || location.getPath().endsWith(suffix)) {
+			return;
+		}
+		ResourceLocation emissiveLocation = new ResourceLocation(location.getNamespace(), location.getPath() + suffix);
+		if (EmissiveSuffixLoader.hasTexture(Minecraft.getMinecraft().getResourceManager(), emissiveLocation)) {
+			((TextureMap) (Object) this).registerSprite(emissiveLocation);
+		}
+	}
+}
