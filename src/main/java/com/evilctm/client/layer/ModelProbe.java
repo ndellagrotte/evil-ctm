@@ -43,9 +43,14 @@ public final class ModelProbe {
 		if (model == null) {
 			return Collections.emptyList();
 		}
-		BlockRenderLayer previous = MinecraftForgeClient.getRenderLayer();
+		BlockRenderLayer previous;
 		try {
+			previous = MinecraftForgeClient.getRenderLayer();
 			ForgeHooksClient.setRenderLayer(null);
+		} catch (RuntimeException | LinkageError e) {
+			return Collections.emptyList();
+		}
+		try {
 			List<BakedQuad> quads = model.getQuads(state, face, 42L);
 			return quads != null ? quads : Collections.emptyList();
 		} catch (RuntimeException e) {

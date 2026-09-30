@@ -20,6 +20,10 @@ class QuadClipperTest {
 
 	/** A north-facing quad with UVs 0..1 across a unit face. */
 	private static BakedQuad makeQuad(float minU, float minV, float maxU, float maxV) {
+		return makeQuad(minU, minV, maxU, maxV, true);
+	}
+
+	private static BakedQuad makeQuad(float minU, float minV, float maxU, float maxV, boolean diffuse) {
 		float[] verts = new float[4 * 5];
 		// POSITION_TEX layout: x,y,z,u,v
 		// North face: x goes right (u), y goes up (v). Vertex order: bottom-left, bottom-right, top-right, top-left
@@ -31,7 +35,7 @@ class QuadClipperTest {
 		for (int i = 0; i < verts.length; i++) {
 			data[i] = Float.floatToIntBits(verts[i]);
 		}
-		BakedQuad quad = new BakedQuad(data, -1, EnumFacing.NORTH, null, true, DefaultVertexFormats.POSITION_TEX);
+		BakedQuad quad = new BakedQuad(data, -1, EnumFacing.NORTH, null, diffuse, DefaultVertexFormats.POSITION_TEX);
 		return quad;
 	}
 
@@ -155,6 +159,23 @@ class QuadClipperTest {
 		assertTrue(pos[1].x >= -0.001f && pos[1].x <= 0.251f, "x1=" + pos[1].x);
 		assertTrue(pos[0].y >= -0.001f && pos[0].y <= 0.251f, "y0=" + pos[0].y);
 		assertTrue(pos[1].y >= -0.001f && pos[1].y <= 0.251f, "y1=" + pos[1].y);
+	}
+
+	@Test
+	void everyOperationKeepsTheDiffuseFlag() {
+		TestSprite sprite = new TestSprite("test:diffuse");
+		TestSprite other = new TestSprite("test:diffuse_other");
+		for (boolean diffuse : new boolean[]{false, true}) {
+			BakedQuad base = makeQuad(0, 0, 1, 1, diffuse);
+			BakedQuad[] quadrants = QuadClipper.subdivide4(base, sprite);
+			for (BakedQuad quadrant : quadrants) {
+				assertEquals(diffuse, quadrant.shouldApplyDiffuseLighting());
+			}
+			assertEquals(diffuse, QuadClipper.grow(quadrants[0], sprite).shouldApplyDiffuseLighting());
+			assertEquals(diffuse, QuadClipper.clip(base, sprite, CtmSubmap.fromPixelScale(4, 4, 0, 0)).shouldApplyDiffuseLighting());
+			assertEquals(diffuse, QuadClipper.transformUVs(base, sprite, other, CtmSubmap.X1).shouldApplyDiffuseLighting());
+			assertEquals(diffuse, QuadClipper.rotate(base, sprite, 1).shouldApplyDiffuseLighting());
+		}
 	}
 
 	private static Vec3d[] positions(BakedQuad q) {

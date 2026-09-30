@@ -86,4 +86,49 @@ class CtmQuadProcessorTest {
 			assertTrue(vOk, "v center " + v);
 		}
 	}
+
+	private static CtmQuadProcessor fixedOutput(List<BakedQuad> produce) {
+		return new CtmQuadProcessor(null, new TextureAtlasSprite[0]) {
+			@Override
+			protected void transformQuad(BakedQuad quad, TextureAtlasSprite sprite, net.minecraft.world.IBlockAccess level, net.minecraft.util.math.BlockPos pos, net.minecraft.block.state.IBlockState appearanceState, net.minecraft.block.state.IBlockState state, long rand, List<BakedQuad> out) {
+				if (produce == null) {
+					out.add(quad);
+				} else {
+					out.addAll(produce);
+				}
+			}
+		};
+	}
+
+	@Test
+	void processQuad_unchangedQuadStops() {
+		com.evilctm.impl.client.ProcessingContextImpl ctx = new com.evilctm.impl.client.ProcessingContextImpl();
+		BakedQuad quad = sideQuad();
+		assertEquals(com.evilctm.api.client.QuadProcessor.ProcessingResult.STOP,
+				fixedOutput(null).processQuad(quad, new Spr("t:base"), null, null, null, null, 0, 0, ctx));
+		assertTrue(ctx.getExtraQuads().isEmpty());
+	}
+
+	@Test
+	void processQuad_emptyResultDiscards() {
+		com.evilctm.impl.client.ProcessingContextImpl ctx = new com.evilctm.impl.client.ProcessingContextImpl();
+		assertEquals(com.evilctm.api.client.QuadProcessor.ProcessingResult.DISCARD,
+				fixedOutput(List.of()).processQuad(sideQuad(), new Spr("t:base"), null, null, null, null, 0, 0, ctx));
+		assertTrue(ctx.getExtraQuads().isEmpty());
+	}
+
+	@Test
+	void processQuad_piecesGoToExtrasAndAreNotCleared() {
+		com.evilctm.impl.client.ProcessingContextImpl ctx = new com.evilctm.impl.client.ProcessingContextImpl();
+		BakedQuad earlier = sideQuad();
+		ctx.getExtraQuads().add(earlier);
+		List<BakedQuad> pieces = List.of(sideQuad(), sideQuad(), sideQuad(), sideQuad());
+
+		assertEquals(com.evilctm.api.client.QuadProcessor.ProcessingResult.DISCARD,
+				fixedOutput(pieces).processQuad(sideQuad(), new Spr("t:base"), null, null, null, null, 0, 0, ctx));
+
+		assertEquals(5, ctx.getExtraQuads().size());
+		assertTrue(ctx.getExtraQuads().get(0) == earlier);
+		assertTrue(ctx.getExtraQuads().subList(1, 5).equals(pieces));
+	}
 }
