@@ -1,71 +1,170 @@
 # Evil CTM
 
-OptiFine/MCPatcher connected and overlay textures (`optifine/ctm` and `mcpatcher/ctm` `.properties` rules), emissive (`_e`)
-textures and CTM-mod `.png.mcmeta` metadata for **Cleanroom 1.12.2**, rendered through **Demonica's S20 block quad
-transformer**. A port of [CleanContinuity](https://github.com/Q-Engineering-Source/CleanContinuity) onto Demonica.
+Connected textures for **Cleanroom 1.12.2**, rendered through **Demonica's fast block renderer**.
+
+Evil CTM reads OptiFine/MCPatcher CTM rules (`optifine/ctm` and `mcpatcher/ctm` `.properties` files), emissive `_e`
+textures and CTM-mod `.png.mcmeta` metadata. It applies them through Demonica's S20 `BlockQuadTransformer` API. It is a
+port of [CleanContinuity](https://github.com/Q-Engineering-Source/CleanContinuity) onto Demonica. It adds the methods
+CleanContinuity lacks and fixes about 15 of its bugs, such as the state-cache leak, biome filters that never matched,
+CTM textures that never animated and reloads that were unsafe while chunks were building.
+
+> **Status: alpha, not released.** It loads and renders in a ~400-mod pack (RotN), but most methods have not been
+> compared with OptiFine in game yet. A licence question blocks any release (see [Release status](#release-status)).
 
 ## Requirements
 
-- Cleanroom 1.12.2 with **Demonica** (built against 0.6.0) and the Celeritas build Demonica pins
-  (`org.embeddedt:celeritas-forge-mc12.2:2.5.0-autobuild.9b661b70`).
-- Demonica's **fast block renderer** switched on: *Video Settings → Use Fast Block Renderer*, or
-  `"performance": { "use_fast_block_renderer": true }` in `config/demonica-options.json`. It is off by default.
-  Evil CTM only renders on that path; when it is off (or Demonica rejects the Celeritas jar) Evil CTM logs a warning
-  and prints one in chat.
-- Client only. Servers do not need it.
-- Java 21 or newer (the same as Demonica).
+| | |
+|---|---|
+| Loader | Cleanroom 1.12.2 (built against 0.6.13-alpha) |
+| Demonica | 0.6.0, **required** |
+| Celeritas | The build your Demonica version accepts (Demonica's log names it) |
+| Java | 21 or newer |
+| Side | Client only. Servers do not need it. |
 
-Blocks Demonica sends to the vanilla renderer (non-`MODEL` render types, Snow Real Magic layers, ArchitectureCraft,
-blocks next to Component Model Hider hidden blocks), pistons, falling blocks, items and TESRs never get CTM. Evil CTM
-has no hook in the vanilla block renderer and does not wrap models.
+**Turn on Demonica's fast block renderer.** It is off by default, and Evil CTM has no other render path. Use
+*Video Settings → Use Fast Block Renderer*, or set this in `config/demonica-options.json`:
 
-## Supported methods
+```json
+"performance": { "use_fast_block_renderer": true }
+```
 
-- `ctm`/`glass`, `ctm_compact`, `horizontal`/`bookshelf`, `vertical`, `horizontal+vertical`/`h+v`,
-  `vertical+horizontal`/`v+h`, `top`, `random`, `repeat` and `fixed`.
+If the renderer is off, the S20 API is missing, or Demonica rejects the Celeritas jar, Evil CTM logs the reason and
+shows a warning in chat. It does not fall back to the vanilla renderer.
+
+### What never gets connected textures
+
+Evil CTM does not hook the vanilla block renderer and does not wrap models. Anything Demonica does not send through
+S20 is drawn without CTM:
+
+- items, pistons, falling blocks and tile-entity renderers;
+- blocks Demonica hands to the vanilla renderer, such as non-`MODEL` render types, Snow Real Magic layers,
+  ArchitectureCraft blocks and blocks next to Component Model Hider hidden blocks.
+
+## Features
+
+**Methods**
+
+- `ctm` / `glass`, `ctm_compact`
+- `horizontal` / `bookshelf`, `vertical`, `horizontal+vertical` / `h+v`, `vertical+horizontal` / `v+h`
+- `top`, `random`, `repeat`, `fixed`
 - The overlay family: `overlay`, `overlay_ctm`, `overlay_random`, `overlay_repeat`, `overlay_fixed`,
-  `overlay_horizontal`, `overlay_vertical`, `overlay_horizontal+vertical`/`overlay_h+v` and
-  `overlay_vertical+horizontal`/`overlay_v+h`.
-- Multipass rule chains (for example `random` then `repeat`).
-- Rules from both `optifine/ctm` and `mcpatcher/ctm`.
-- CTM-mod `.png.mcmeta` metadata.
-- Emissive textures, using the suffix from `optifine/emissive.properties`.
+  `overlay_horizontal`, `overlay_vertical`, `overlay_h+v` and `overlay_v+h`
+- Multipass rule chains, for example `random` followed by `repeat`
 
-Overlays, emissive textures on solid blocks and CTM-mod layer rules can need a render layer that the block does not
-normally use. Evil CTM adds that layer to Celeritas' mesher for the affected block states. The `extra_layers` option
-switches this off. Emissive and CTM-mod layer quads then stay in the block's own layers, and overlays aimed at a layer
-the block does not use are not drawn. Under a shader pack that moves the block to a different layer, Demonica's choice
-of layer wins.
+**Rule properties**
 
-Built-in default rules for glass, glass panes, bookshelves and sandstone ship inside the mod and only apply while the
-vanilla textures are in use. They can be switched off with `builtin_default_rules` in `config/evilctm.json`.
+- Matching: `matchBlocks` (block specs with properties and metadata), `matchTiles`, `metadata`, `faces`, `biomes`,
+  `heights` / `minHeight` / `maxHeight` and `name`.
+- Connection: `connect=block|tile|material|state`, `connectTiles`, `innerSeams`, `linked` and `symmetry`.
+- Tiles: `tiles`, `weight`, `randomLoops`, `width` / `height`, `tintIndex` / `tintBlock`, `layer` and `renderPass`.
+- Filename inference for `block_<name>.properties` and the old MCPatcher layout. Log, pillar and quartz axes are
+  handled.
+
+**Other formats**
+
+- Emissive textures, using the suffix set in `optifine/emissive.properties`.
+- CTM-mod `.png.mcmeta` metadata. See the [licence note](#release-status).
+- Built-in default rules for glass, glass panes, bookshelves and sandstone. They come from Continuity's default pack
+  and apply only while the vanilla textures are in use.
+
+### Extra render layers
+
+Overlays, emissive textures on solid blocks and CTM-mod layer rules can need a render layer the block does not
+normally use. Evil CTM adds that layer to Celeritas' mesher, but only for the block states that need it. Turning off
+`extra_layers` stops this. Emissive and CTM-mod quads then stay in the block's own layers, and an overlay aimed at a
+layer the block does not use is not drawn. When a shader pack moves a block to another layer, Demonica's choice wins.
 
 ## Configuration
 
-`config/evilctm.json` (also editable from the mod list): `connected_textures`, `emissive_textures`,
-`ctm_mod_textures`, `builtin_default_rules`, `extra_layers`, `render_path_warnings`.
+Edit `config/evilctm.json`, or open the config screen from the mod list. That screen also shows whether the render
+path is working. All options default to `true`.
+
+| Option | Effect |
+|---|---|
+| `connected_textures` | Apply `.properties` CTM rules from resource packs. |
+| `emissive_textures` | Draw emissive `_e` textures at full brightness. |
+| `ctm_mod_textures` | Read CTM-mod `.png.mcmeta` metadata. Reloads resources when changed. |
+| `builtin_default_rules` | Use the built-in rules beneath resource packs. Reloads resources when changed. |
+| `extra_layers` | Let blocks render in extra layers when a rule needs one. |
+| `render_path_warnings` | Show a chat warning when Evil CTM cannot render. |
+
+## Troubleshooting
+
+**No connected textures at all.** Check that the fast block renderer is on and look for an `Evil CTM:` warning in
+chat or `latest.log`. The warning names the cause and how to fix it.
+
+**Memory climbs to 15–25 GB during startup.** Evil CTM does not cause this; the same thing happens with Evil CTM
+removed. It has been seen with Celeritas on Java 25 in large modpacks, and it does not happen on every launch. The
+memory is native, not Java heap, and it grows right after the block atlas is stitched. The likely cause is a C2 JIT
+compile of a Celeritas sprite method that never finishes. This has not been confirmed. A suggested workaround is to
+add these JVM arguments, which cap the memory any single compile can use:
+
+```
+-XX:CompileCommand=quiet -XX:CompileCommand=MemLimit,*.*,1g
+```
+
+**A resource pack has no backing file.** Some mods register packs like this. Evil CTM skips them, and a pack that fails
+to scan does not stop the others from loading.
 
 ## Building
 
-```
+Demonica is not on a Maven repository, so the build compiles against a local Demonica jar:
+
+```sh
 ./gradlew --offline build -Pdemonica_jar=/absolute/path/to/Demonica-0.6.0-SNAPSHOT.jar
 ```
 
-`demonica_jar` defaults to `../Demonica/build/libs/Demonica-0.6.0-SNAPSHOT.jar`. The jar is put on the compile
-classpath unremapped (`demonica_unremapped=true` in `gradle.properties`; see the comment there). If the Celeritas or
-fluidlogged-api coordinates do not resolve offline, pass `-Pceleritas_jar=<jar>` / `-Pfluidlogged_jar=<jar>`.
+- `demonica_jar` defaults to `../Demonica/build/libs/Demonica-0.6.0-SNAPSHOT.jar`. The jar goes on the compile
+  classpath unremapped (`demonica_unremapped=true`). The comment in `gradle.properties` explains why.
+- If the Celeritas or fluidlogged-api coordinates do not resolve offline, pass `-Pceleritas_jar=<jar>` and
+  `-Pfluidlogged_jar=<jar>`.
+- The build uses the Java 25 toolchain and targets Java 21. The output is `build/libs/evilctm-<version>.jar`.
+- The JUnit tests run with `build`. They never load Demonica, Celeritas or the S20 bridge classes.
+- CI is turned off (`if: false` in `.github/workflows/build.yml`) because CI has no Demonica jar.
 
-## Testing in game
+### Testing in game
 
-`runClient` does not work: FML requires Demonica, which is not a runtime dependency of this project. Copy
-`build/libs/evilctm-0.1.0.jar`, the Demonica jar and the pinned Celeritas jar into a real Cleanroom instance's `mods/`
-folder, switch on the fast block renderer, and load a CTM resource pack.
+`runClient` does not work, because FML requires Demonica and Demonica is not a runtime dependency here. Copy the mod
+jar, Demonica and a Celeritas build Demonica accepts into the `mods/` folder of a real Cleanroom instance. Turn on the
+fast block renderer and load a CTM resource pack.
+
+These still need checking in game:
+
+- how each method compares with OptiFine;
+- whether overlays get their extra layer when Evil CTM's mesher mixin runs alongside Demonica's;
+- the end textures on north/south-facing logs;
+- the built-in default rules;
+- a dedicated server starting without client classes.
+
+The code that checks whether CTM can render reads Demonica internals that are not public API. Re-check it against
+each new Demonica release.
+
+## Project layout
+
+| Package | Contents |
+|---|---|
+| `com.evilctm.client.compat.demonica` | S20 transformer, Demonica bridge and render-path checks |
+| `com.evilctm.client.resource`, `.loader` | Resource-pack scanning, reload session and rule loaders |
+| `com.evilctm.client.properties` | Parsing of `.properties` rules |
+| `com.evilctm.client.processor` | Method implementations (simple, overlay and multipass) |
+| `com.evilctm.client.ctm` | CTM-mod `.mcmeta` support |
+| `com.evilctm.client.layer` | Extra render layer routing |
+| `com.evilctm.client.mixin` | The only two mixins: Celeritas `ChunkBuilderMeshingTask` (extra layers) and `TextureMap` (emissive sprites) |
+| `com.evilctm.api.client` | Extension points: loaders, quad processors and processing data keys |
 
 ## Release status
 
-Not ready for release. Rendering has not been checked in game yet, and the licence of the CTM-mod connection logic
-(`CtmCtmLogic`, `CtmConnectionMap`, `CtmLogicBakery`) is unresolved. See `NOTICE.md`.
+Evil CTM is not ready for release, for two reasons:
+
+1. **Licence.** The CTM-mod connection logic (`CtmCtmLogic`, `CtmConnectionMap`, `CtmLogicBakery`) was transcribed
+   from Chisel-Team's ConnectedTexturesMod. That code may be GPL-2.0, which cannot be distributed under LGPL-3.0-only.
+   Before a release, one of these has to happen: the licence is confirmed compatible, Chisel-Team gives permission,
+   the classes are rewritten clean-room, or CTM-mod format support is removed. The OptiFine format is not affected.
+   `NOTICE.md` has the details.
+2. **In-game checks.** The items under [Testing in game](#testing-in-game) are still open.
 
 ## License
 
-LGPL-3.0-only. See `LICENSE`, `COPYING` and `NOTICE.md` for the full notices and credits.
+LGPL-3.0-only. See `LICENSE`, `COPYING` and `NOTICE.md`. Evil CTM is derived from CleanContinuity (DHJComical),
+NeoContinuity (Argon4W) and Continuity (PepperCode1), all LGPL-3.0. The Gradle scripts come from kappa-maintainer's
+CleanroomModTemplate (MIT).
