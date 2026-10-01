@@ -98,7 +98,7 @@ compile of a Celeritas sprite method that never finishes. This has not been conf
 add these JVM arguments, which cap the memory any single compile can use:
 
 ```
--XX:CompileCommand=quiet -XX:CompileCommand=MemLimit,*.*,1g
+-XX:TieredStopAtLevel=1
 ```
 
 **A resource pack has no backing file.** Some mods register packs like this. Evil CTM skips them, and a pack that fails
