@@ -3,6 +3,7 @@ package com.evilctm.client;
 
 import com.evilctm.client.compat.demonica.CtmQuadTransformer;
 import com.evilctm.client.compat.demonica.DemonicaBridge;
+import com.evilctm.client.compat.demonica.FastRendererLock;
 import com.evilctm.client.compat.demonica.RenderPathStatus;
 import com.evilctm.client.loader.CtmLoaders;
 import com.evilctm.client.processor.ProcessingDataKeys;
@@ -44,6 +45,7 @@ public final class EvilCtmClient {
 			RenderPathStatus.recordApiMissing();
 			LOGGER.error("Demonica's S20 BlockQuadTransformer API is missing; Evil CTM cannot render", e);
 		}
+		FastRendererLock.install();
 		MinecraftForge.EVENT_BUS.register(new EvilCtmTextureEvents());
 		MinecraftForge.EVENT_BUS.register(new ModelEvents());
 		MinecraftForge.EVENT_BUS.register(new RenderPathWarnings());

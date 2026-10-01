@@ -21,15 +21,14 @@ CTM textures that never animated and reloads that were unsafe while chunks were 
 | Java | 21 or newer |
 | Side | Client only. Servers do not need it. |
 
-**Turn on Demonica's fast block renderer.** It is off by default, and Evil CTM has no other render path. Use
-*Video Settings → Use Fast Block Renderer*, or set this in `config/demonica-options.json`:
+**Evil CTM turns on Demonica's fast block renderer.** That renderer is off by default, and Evil CTM has no other render
+path. While Evil CTM is installed, it switches the renderer on at startup and greys out *Video Settings → Use Fast
+Block Renderer* so that it cannot be switched off. Your `config/demonica-options.json` is not changed at startup. The
+next time Demonica saves its settings, it writes `use_fast_block_renderer: true`, so the renderer stays on if you
+remove Evil CTM later. Switch it off in Video Settings after removing Evil CTM if you want it off.
 
-```json
-"performance": { "use_fast_block_renderer": true }
-```
-
-If the renderer is off, the S20 API is missing, or Demonica rejects the Celeritas jar, Evil CTM logs the reason and
-shows a warning in chat. It does not fall back to the vanilla renderer.
+If the S20 API is missing or Demonica rejects the Celeritas jar, Evil CTM logs the reason and shows a warning in chat.
+It does not fall back to the vanilla renderer.
 
 ### What never gets connected textures
 
@@ -90,8 +89,7 @@ path is working. All options default to `true`.
 
 ## Troubleshooting
 
-**No connected textures at all.** Check that the fast block renderer is on and look for an `Evil CTM:` warning in
-chat or `latest.log`. The warning names the cause and how to fix it.
+**No connected textures at all.** Look for an `Evil CTM:` warning in chat or `latest.log`. The warning names the cause and how to fix it.
 
 **Memory climbs to 15–25 GB during startup.** Evil CTM does not cause this; the same thing happens with Evil CTM
 removed. It has been seen with Celeritas on Java 25 in large modpacks, and it does not happen on every launch. The
@@ -125,8 +123,8 @@ Demonica is not on a Maven repository, so the build compiles against a local Dem
 ### Testing in game
 
 `runClient` does not work, because FML requires Demonica and Demonica is not a runtime dependency here. Copy the mod
-jar, Demonica and a Celeritas build Demonica accepts into the `mods/` folder of a real Cleanroom instance. Turn on the
-fast block renderer and load a CTM resource pack.
+jar, Demonica and a Celeritas build Demonica accepts into the `mods/` folder of a real Cleanroom instance. Load a CTM
+resource pack. Evil CTM turns on the fast block renderer itself.
 
 These still need checking in game:
 

@@ -11,7 +11,10 @@ import java.util.Properties;
 
 import org.junit.jupiter.api.Test;
 
-/** Each render path problem has its own message and its own remedy; only FAST_RENDERER_OFF points at the option. */
+/**
+ * Each render path problem has its own message and its own remedy. None points at the fast block renderer option,
+ * which {@link FastRendererLock} keeps on and greys out.
+ */
 class RenderPathStatusTest {
 	private static Properties lang() throws Exception {
 		Properties lang = new Properties();
@@ -33,7 +36,12 @@ class RenderPathStatusTest {
 			assertTrue(hint != null, problem.hintKey());
 			assertFalse(problem.remedy().isEmpty(), problem.name());
 			boolean mentionsOption = hint.contains("Fast Block Renderer") || problem.remedy().contains("Fast Block Renderer");
-			assertTrue(mentionsOption == (problem == RenderPathStatus.Problem.FAST_RENDERER_OFF), problem.name());
+			assertFalse(mentionsOption, problem.name());
 		}
+	}
+
+	@Test
+	void lockedOptionHasATooltip() throws Exception {
+		assertTrue(lang().containsKey("options.evilctm.fast_block_renderer_locked.tooltip"));
 	}
 }

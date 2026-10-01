@@ -21,7 +21,7 @@ public final class RenderPathStatus {
 			return "evilctm.warning." + name().toLowerCase(java.util.Locale.ROOT);
 		}
 
-		/** The remedy for this problem: only {@link #FAST_RENDERER_OFF} is fixed by the fast block renderer option. */
+		/** The translation key of the remedy for this problem. */
 		public String hintKey() {
 			return "evilctm.warning.hint." + name().toLowerCase(java.util.Locale.ROOT);
 		}
@@ -30,7 +30,7 @@ public final class RenderPathStatus {
 		public String remedy() {
 			return switch (this) {
 				case OK -> "";
-				case FAST_RENDERER_OFF -> "Enable Video Settings -> Use Fast Block Renderer (performance.use_fast_block_renderer in config/demonica-options.json)";
+				case FAST_RENDERER_OFF -> "Evil CTM switches the fast block renderer on at startup, but something switched it off again; please report this with your latest.log attached";
 				case CELERITAS_REJECTED -> "Install the Celeritas build this Demonica version accepts (see Demonica's log for the expected build)";
 				case API_MISSING, BRIDGE_BROKEN -> "Update Demonica (or Evil CTM) to versions that support each other";
 				case NOT_INVOKED -> "Please report this with your latest.log attached";
