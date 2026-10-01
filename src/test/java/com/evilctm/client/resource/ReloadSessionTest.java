@@ -2,17 +2,22 @@
 package com.evilctm.client.resource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.evilctm.client.EvilCtmClient;
 import com.evilctm.testutil.McBootstrap;
+import net.minecraft.client.resources.AbstractResourcePack;
 import net.minecraft.client.resources.FolderResourcePack;
 import net.minecraft.client.resources.IResourcePack;
 import net.minecraft.util.ResourceLocation;
@@ -146,5 +151,59 @@ class ReloadSessionTest {
 	void disabledDefinitionScanIsNotRun() {
 		var empty = CtmPropertiesLoader.loadFromPacks(List.of(), null, true);
 		assertTrue(ReloadSession.scan(() -> empty, null).definitions().isEmpty());
+	}
+
+	/** An {@link AbstractResourcePack} with no backing file, as some mods create (seen in the RotN modpack). */
+	private static final class FilelessPack extends AbstractResourcePack {
+		FilelessPack() {
+			super(null);
+		}
+
+		@Override
+		protected InputStream getInputStreamByName(String name) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		protected boolean hasResourceName(String name) {
+			return false;
+		}
+
+		@Override
+		public Set<String> getResourceDomains() {
+			return Set.of();
+		}
+
+		@Override
+		public String getPackName() {
+			return "fileless";
+		}
+	}
+
+	@Test
+	void filelessPackHasNoScanRoot() {
+		assertNull(ReloadSession.scanRoot(new FilelessPack()));
+	}
+
+	@Test
+	void filelessPackIsSkippedAndOtherPacksStillLoad(@TempDir Path root) throws Exception {
+		List<IResourcePack> packs = new ArrayList<>();
+		packs.add(new FilelessPack());
+		packs.addAll(pack(root));
+		assertEquals(2, CtmPropertiesLoader.loadFromPacks(packs, null, false).getRules().size());
+	}
+
+	@Test
+	void aPackThatThrowsWhileScanningIsSkipped(@TempDir Path root) throws Exception {
+		IResourcePack broken = new FolderResourcePack(root.resolve("broken").toFile()) {
+			@Override
+			public File getResourcePackFile() {
+				throw new IllegalStateException("broken pack");
+			}
+		};
+		List<IResourcePack> packs = new ArrayList<>();
+		packs.add(broken);
+		packs.addAll(pack(root));
+		assertEquals(2, CtmPropertiesLoader.loadFromPacks(packs, null, false).getRules().size());
 	}
 }

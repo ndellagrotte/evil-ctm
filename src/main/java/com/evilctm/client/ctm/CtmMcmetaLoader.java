@@ -22,7 +22,6 @@ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import com.evilctm.client.EvilCtmClient;
 import com.evilctm.client.resource.ReloadSession;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.resources.AbstractResourcePack;
 import net.minecraft.client.resources.IResource;
 import net.minecraft.client.resources.IResourceManager;
 import net.minecraft.client.resources.IResourcePack;
@@ -135,7 +134,12 @@ public final class CtmMcmetaLoader {
 	}
 
 	private void loadAll(IResourcePack pack, int packPriority) {
-		loadAll(pack.getPackName(), packPriority, consumer -> scanPack(pack, consumer));
+		try {
+			loadAll(pack.getPackName(), packPriority, consumer -> scanPack(pack, consumer));
+		} catch (RuntimeException | LinkageError e) {
+			// One broken pack (often another mod's) must not abort the reload or the other packs' definitions.
+			EvilCtmClient.LOGGER.error("Failed to scan pack '" + pack.getPackName() + "' for CTM Mod metadata; skipping it", e);
+		}
 	}
 
 	void loadAll(String packName, int packPriority, Consumer<BiConsumer<String, String>> scanner) {
@@ -205,18 +209,17 @@ public final class CtmMcmetaLoader {
 	}
 
 	private static void rememberDirectory(IResourcePack pack, Set<Path> scannedDirectories) {
-		if (ReloadSession.unwrapForScan(pack) instanceof AbstractResourcePack abstractPack && abstractPack.getResourcePackFile().isDirectory()) {
-			scannedDirectories.add(abstractPack.getResourcePackFile().toPath().toAbsolutePath().normalize());
+		File file = ReloadSession.scanRoot(pack);
+		if (file != null && file.isDirectory()) {
+			scannedDirectories.add(file.toPath().toAbsolutePath().normalize());
 		}
 	}
 
 	private static void scanPack(IResourcePack pack, BiConsumer<String, String> consumer) {
-		if (!(ReloadSession.unwrapForScan(pack) instanceof AbstractResourcePack abstractPack)) {
-			ReloadSession.logUnscannablePack(pack);
+		File file = ReloadSession.scanRoot(pack);
+		if (file == null) {
 			return;
 		}
-
-		File file = abstractPack.getResourcePackFile();
 		if (file.isDirectory()) {
 			scanDirectory(file.toPath(), consumer);
 		} else if (file.isFile()) {

@@ -31,7 +31,6 @@ import com.evilctm.client.properties.BaseCtmProperties;
 import com.evilctm.client.util.biome.BiomeHolderManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.client.resources.AbstractResourcePack;
 import net.minecraft.client.resources.IResourceManager;
 import net.minecraft.client.resources.IResourcePack;
 import net.minecraft.client.resources.ResourcePackRepository;
@@ -93,7 +92,13 @@ public class CtmPropertiesLoader {
 	private LoadingResult loadAllPacks(List<IResourcePack> packs) {
 		int packPriority = 0;
 		for (IResourcePack pack : packs) {
-			loadAll(pack, packPriority++);
+			int priority = packPriority++;
+			try {
+				loadAll(pack, priority);
+			} catch (RuntimeException | LinkageError e) {
+				// One broken pack (often another mod's) must not abort the reload or the other packs' rules.
+				EvilCtmClient.LOGGER.error("Failed to scan pack '" + pack.getPackName() + "' for CTM properties; skipping it", e);
+			}
 		}
 		containers.sort(Comparator.reverseOrder());
 		EvilCtmClient.LOGGER.debug("Loaded {} CTM property containers from {} packs", containers.size(), packs.size());
@@ -168,12 +173,10 @@ public class CtmPropertiesLoader {
 	}
 
 	private static void scanPack(IResourcePack pack, ScanConsumer consumer) {
-		if (!(ReloadSession.unwrapForScan(pack) instanceof AbstractResourcePack abstractPack)) {
-			ReloadSession.logUnscannablePack(pack);
+		File file = ReloadSession.scanRoot(pack);
+		if (file == null) {
 			return;
 		}
-
-		File file = abstractPack.getResourcePackFile();
 		if (file.isDirectory()) {
 			scanDirectory(file.toPath(), consumer);
 		} else if (file.isFile()) {

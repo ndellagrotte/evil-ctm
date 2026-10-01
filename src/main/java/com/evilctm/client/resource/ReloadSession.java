@@ -1,13 +1,17 @@
 /* Evil CTM. SPDX-License-Identifier: LGPL-3.0-only. Derived from CleanContinuity / NeoContinuity / Continuity (LGPL-3.0); see NOTICE.md. */
 package com.evilctm.client.resource;
 
+import java.io.File;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
+import javax.annotation.Nullable;
+
 import com.evilctm.client.EvilCtmClient;
 import com.evilctm.client.ctm.CtmDefinition;
+import net.minecraft.client.resources.AbstractResourcePack;
 import net.minecraft.client.resources.IResourcePack;
 import net.minecraft.client.resources.LegacyV2Adapter;
 
@@ -73,6 +77,22 @@ public final class ReloadSession {
 			pack = adapter.getUnadaptedPack();
 		}
 		return pack;
+	}
+
+	/**
+	 * The zip or folder to enumerate for {@code pack}, or {@code null} (logged once) when it has none. Some mods
+	 * create {@link AbstractResourcePack}s with no backing file, so a file-backed type is not enough.
+	 */
+	@Nullable
+	public static File scanRoot(IResourcePack pack) {
+		if (unwrapForScan(pack) instanceof AbstractResourcePack abstractPack) {
+			File file = abstractPack.getResourcePackFile();
+			if (file != null) {
+				return file;
+			}
+		}
+		logUnscannablePack(pack);
+		return null;
 	}
 
 	/** Logs once per pack name that the pack cannot be scanned for CTM files (it is not file-backed). */
