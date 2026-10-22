@@ -1,5 +1,6 @@
 {
   "required": true,
+  "refmap": "mixins.evilctm.refmap.json",
   "minVersion": "0.8.7",
   "package": "com.evilctm.client.mixin",
   "compatibilityLevel": "JAVA_8",

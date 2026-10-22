@@ -1,4 +1,9 @@
-/* Evil CTM. SPDX-License-Identifier: LGPL-3.0-only. Derived from CleanContinuity / NeoContinuity / Continuity (LGPL-3.0); see NOTICE.md. */
+/*
+ * Copyright (c) 2026 Nicholas DellaGrotte
+ * SPDX-License-Identifier: LGPL-3.0-only
+ */
+
+/* Evil CTM. Derived from CleanContinuity / NeoContinuity / Continuity (LGPL-3.0); see NOTICE.md. */
 package com.evilctm.client.processor.overlay;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -179,6 +184,9 @@ class SimpleOverlayTest {
 	@Test
 	void bakedOverlayQuadsHaveVanillaOrientation() {
 		TextureAtlasSprite sprite = TestSprites.create("test:overlay_orientation");
+		// FaceBakery pulls every UV 0.1 % of the sprite towards the opposite corner (vanilla's bleed guard); the
+		// hand-built fallback and the reference quad use the sprite's exact bounds.
+		float uvTolerance = 0.0011f * Math.max(sprite.getMaxU() - sprite.getMinU(), sprite.getMaxV() - sprite.getMinV());
 		for (EnumFacing face : EnumFacing.VALUES) {
 			BakedQuad baked = OverlayQuads.quad(face, sprite, -1, null);
 			BakedQuad reference = TestQuads.fullFace(face, sprite, -1);
@@ -190,7 +198,7 @@ class SimpleOverlayTest {
 				for (int axis = 0; axis < 3; axis++) {
 					assertEquals(QuadUtil.positionComponent(reference, v, axis), QuadUtil.positionComponent(baked, v, axis), 1e-6, face + " vertex " + v + " axis " + axis);
 				}
-				assertArrayEquals(TestQuads.uvOf(reference, v), TestQuads.uvOf(baked, v), 1e-6f, face + " uv " + v);
+				assertArrayEquals(TestQuads.uvOf(reference, v), TestQuads.uvOf(baked, v), uvTolerance, face + " uv " + v);
 			}
 			assertTrue(OverlayProcessingPredicate.isUnitSquareOnFace(baked));
 		}

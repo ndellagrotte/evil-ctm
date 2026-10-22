@@ -15,10 +15,10 @@ CTM textures that never animated and reloads that were unsafe while chunks were 
 
 | | |
 |---|---|
-| Loader | Cleanroom 1.12.2 (built against 0.6.13-alpha) |
-| Demonica | 0.6.0, **required** |
+| Loader | Cleanroom 1.12.2, 0.7.4-alpha or newer (built against 0.7.4-alpha) |
+| Demonica | 0.9.0, **required** |
 | Celeritas | The build your Demonica version accepts (Demonica's log names it) |
-| Java | 21 or newer |
+| Java | 25 (what Cleanroom 0.7 runs on) |
 | Side | Client only. Servers do not need it. |
 
 **Evil CTM turns on Demonica's fast block renderer.** That renderer is off by default, and Evil CTM has no other render
@@ -106,28 +106,50 @@ to scan does not stop the others from loading.
 
 ## Building
 
-Demonica is not on a Maven repository, so the build compiles against a local Demonica jar:
-
 ```sh
-./gradlew --offline build -Pdemonica_jar=/absolute/path/to/Demonica-0.6.0-SNAPSHOT.jar
+./gradlew build
 ```
 
-- `demonica_jar` defaults to `../Demonica/build/libs/Demonica-0.6.0-SNAPSHOT.jar`. The jar goes on the compile
-  classpath unremapped (`demonica_unremapped=true`). The comment in `gradle.properties` explains why.
-- If the Celeritas or fluidlogged-api coordinates do not resolve offline, pass `-Pceleritas_jar=<jar>` and
-  `-Pfluidlogged_jar=<jar>`.
-- The build uses the Java 25 toolchain and targets Java 21. The output is `build/libs/evilctm-<version>.jar`.
+The build is CleanroomMC's [CleanroomModTemplate](https://github.com/CleanroomMC/CleanroomModTemplate) layout:
+CleanroomGradle and Conventions, Cleanroom 0.7.4-alpha, Java 25. The first build is online: it resolves the Cleanroom
+userdev from CleanroomMC's Maven, Demonica from the assets of its GitHub release, Celeritas from maven.outlands.top and
+Fluidlogged API from Modrinth. After that `./gradlew build --offline` works.
+
+- The output is `build/libs/evilctm-<version>.jar` (SRG names, the jar players install). `build/devlibs/` holds the
+  MCP-named jar the dev client uses. The sources jar is next to the mod jar.
+- The version comes from git tags (Conventions' Versioning). `./gradlew -q printVersion` shows it. Tag `vX.Y.Z` on
+  `main` to release: the release workflow builds the jar and creates the GitHub release.
+- `-PdemonicaJar=/path/to/Demonica-<version>.jar` compiles against a local Demonica build (its `build/libs` jar, SRG
+  names) instead of the release. Keep `demonica_version` in `gradle.properties` on the release Demonica 0.9.0 pins
+  Celeritas against.
 - The JUnit tests run with `build`. They never load Demonica, Celeritas or the S20 bridge classes.
-- CI is turned off (`if: false` in `.github/workflows/build.yml`) because CI has no Demonica jar.
+- `checkLicense` runs with `build`: every Java file needs the header from `HEADER`
+  (`./gradlew applyLicenseHeader` adds it). Checkstyle and the FormatJ/ClearSkies formatters are off in
+  `gradle.properties`; the tree is tab-indented and a reformat is a separate step.
+- CI runs the Conventions build workflow on pushes to `main`, `develop/**` and `dev/**`.
 
 ### Testing in game
 
-`runClient` does not work, because FML requires Demonica and Demonica is not a runtime dependency here. Copy the mod
-jar, Demonica and a Celeritas build Demonica accepts into the `mods/` folder of a real Cleanroom instance. Load a CTM
+`runClient` starts a dev client with Demonica and a Celeritas dev jar. A raw Celeritas cannot run in dev because its
+mixins have no refmap, so the dev jar is Demonica's `remapCeleritasForDev` output, and Demonica accepts it only through
+the Celeritas pin its own build generates next to it. Both come from a built Demonica checkout, `../Demonica` by
+default:
+
+```sh
+./gradlew runClient                              # Demonica checkout next door
+./gradlew runClient -PdemonicaCheckout=/path/to/Demonica
+```
+
+`-PceleritasDevJar=<jar>` and `-PdemonicaPinDir=<dir>` name the two files one by one. The client runs Evil CTM from
+its MCP jar and keeps Demonica's jar in `run/client/mods`, which the build owns (`syncDevMods`). Without a Celeritas
+dev jar the client starts without Demonica and Evil CTM only reports its render-path warning, which is enough to check
+that the Mixin config and the access transformer apply. The comment above the `cleanroom.runs` block in `build.gradle`
+explains why each jar goes where it does.
+
+For a real instance, copy the mod jar, Demonica and a Celeritas build Demonica accepts into `mods/`. Load a CTM
 resource pack. Evil CTM turns on the fast block renderer itself.
 
 These still need checking in game:
-
 - how each method compares with OptiFine;
 - whether overlays get their extra layer when Evil CTM's mesher mixin runs alongside Demonica's;
 - the end textures on north/south-facing logs;
@@ -163,6 +185,6 @@ Evil CTM is not ready for release, for two reasons:
 
 ## License
 
-LGPL-3.0-only. See `LICENSE`, `COPYING` and `NOTICE.md`. Evil CTM is derived from CleanContinuity (DHJComical),
-NeoContinuity (Argon4W) and Continuity (PepperCode1), all LGPL-3.0. The Gradle scripts come from kappa-maintainer's
-CleanroomModTemplate (MIT).
+LGPL-3.0-only. `LICENSE` holds the LGPL-3.0 text followed by the GPL-3.0 it supplements; `NOTICE.md` has the
+derivation notices. Evil CTM is derived from CleanContinuity (DHJComical), NeoContinuity (Argon4W) and Continuity
+(PepperCode1), all LGPL-3.0. The build follows CleanroomMC's CleanroomModTemplate.

@@ -1,4 +1,9 @@
-/* Evil CTM. SPDX-License-Identifier: LGPL-3.0-only. Derived from CleanContinuity / NeoContinuity / Continuity (LGPL-3.0); see NOTICE.md. */
+/*
+ * Copyright (c) 2026 Nicholas DellaGrotte
+ * SPDX-License-Identifier: LGPL-3.0-only
+ */
+
+/* Evil CTM. Derived from CleanContinuity / NeoContinuity / Continuity (LGPL-3.0); see NOTICE.md. */
 package com.evilctm.client.properties;
 
 import java.util.Collections;

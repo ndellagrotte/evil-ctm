@@ -1,8 +1,9 @@
 # Evil CTM notices
 
-Evil CTM is licensed under the **GNU Lesser General Public License v3.0 only** (LGPL-3.0-only). The full text is in
-`LICENSE`; the GNU General Public License v3.0 it supplements is in `COPYING`. Both files, and this notice, are
-packed into the mod jar under `META-INF/licenses/evilctm/`. The sources jar is published alongside the mod jar.
+Evil CTM is licensed under the **GNU Lesser General Public License v3.0 only** (LGPL-3.0-only). `LICENSE` holds
+the full text of the LGPL-3.0 followed by the GNU General Public License v3.0 it supplements. That file and this
+notice are packed into the mod jar under `META-INF/licenses/evilctm/`. Every Java file carries the copyright and SPDX
+header from `HEADER`. The sources jar is published alongside the mod jar.
 
 ## Derived works
 
@@ -33,27 +34,10 @@ here and **these three classes must not ship in a release** until one of the fol
 
 ## Build scripts
 
-The Gradle build scripts come from kappa-maintainer's CleanroomModTemplate, under the MIT licence:
-
-Copyright (c) 2025 kappa-maintainer
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+The Gradle build (`build.gradle`, `settings.gradle`, the workflows and the files `extractConventions` writes) follows
+CleanroomMC's [CleanroomModTemplate](https://github.com/CleanroomMC/CleanroomModTemplate), built on
+[CleanroomGradle](https://github.com/CleanroomMC/CleanroomGradle) and
+[Conventions](https://github.com/CleanroomMC/Conventions). No code from the earlier Unimined-based template remains.
 
 ## Compile-time references
 
