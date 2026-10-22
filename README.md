@@ -91,16 +91,6 @@ path is working. All options default to `true`.
 
 **No connected textures at all.** Look for an `Evil CTM:` warning in chat or `latest.log`. The warning names the cause and how to fix it.
 
-**Memory climbs to 15–25 GB during startup.** Evil CTM does not cause this; the same thing happens with Evil CTM
-removed. It has been seen with Celeritas on Java 25 in large modpacks, and it does not happen on every launch. The
-memory is native, not Java heap, and it grows right after the block atlas is stitched. The likely cause is a C2 JIT
-compile of a Celeritas sprite method that never finishes. This has not been confirmed. A suggested workaround is to
-add this JVM argument:
-
-```
--XX:TieredStopAtLevel=1
-```
-
 **A resource pack has no backing file.** Some mods register packs like this. Evil CTM skips them, and a pack that fails
 to scan does not stop the others from loading.
 
