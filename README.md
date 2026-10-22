@@ -95,10 +95,10 @@ path is working. All options default to `true`.
 removed. It has been seen with Celeritas on Java 25 in large modpacks, and it does not happen on every launch. The
 memory is native, not Java heap, and it grows right after the block atlas is stitched. The likely cause is a C2 JIT
 compile of a Celeritas sprite method that never finishes. This has not been confirmed. A suggested workaround is to
-add these JVM arguments, which cap the memory any single compile can use:
+add this JVM argument:
 
 ```
--XX:CompileCommand=quiet -XX:CompileCommand=MemLimit,*.*,1g
+-XX:TieredStopAtLevel=1
 ```
 
 **A resource pack has no backing file.** Some mods register packs like this. Evil CTM skips them, and a pack that fails
